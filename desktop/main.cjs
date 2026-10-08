@@ -1,9 +1,18 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, clipboard, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, clipboard, ipcMain, dialog, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const { join } = require('node:path');
+const { mkdirSync } = require('node:fs');
 const { ValidatedResults } = require('./results.cjs');
+const { loginUrl, stateDirectory, backendEnvironment } = require('../scripts/startup-support.cjs');
 
 const root = join(__dirname, '..');
+if (process.env.PROMPT_ENHANCER_STATE_DIR !== undefined) {
+  const state = stateDirectory(root, process.env);
+  for (const [name, path] of [['userData', join(state, 'electron-user-data')], ['sessionData', join(state, 'electron-session-data')]]) {
+    mkdirSync(path, { recursive: true });
+    app.setPath(name, path);
+  }
+}
 const origin = 'http://127.0.0.1:4173';
 const shortcut = 'Control+Shift+E';
 let shortcutLabel = 'Ctrl+Shift+E';
@@ -12,6 +21,17 @@ let window, tray, backend, trayMenu;
 let quitting = false, stopped = false, rendererReady = false;
 let pendingClipboard;
 let shortcutWarning = '';
+let pendingLoginUrl, startupPage, startupError;
+function showStartup(message = '正在启动 Prompt Enhancer…') {
+  const escape = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+  const link = pendingLoginUrl ? `<p><a id="login-link" href="${escape(pendingLoginUrl)}">打开 ChatGPT 登录页</a></p><p>完成浏览器登录后，此窗口会自动进入应用。</p>` : '<p>首次使用需要在浏览器完成 ChatGPT 登录。</p>';
+  startupPage = 'data:text/html;charset=utf-8,' + encodeURIComponent(`<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><title>Prompt Enhancer</title><body style="font:18px sans-serif;padding:40px"><h1 style="font-size:24px">Prompt Enhancer</h1><p>${escape(message)}</p>${link}</body>`);
+  void window.loadURL(startupPage);
+}
+async function openLogin() {
+  try { await shell.openExternal(loginUrl(pendingLoginUrl)); }
+  catch { if (pendingLoginUrl && !quitting) showStartup('浏览器未能自动打开。请点击下方登录入口重试，并检查系统默认浏览器设置。'); }
+}
 
 function show() {
   if (!window || window.isDestroyed()) return;
@@ -62,7 +82,10 @@ else {
     window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide(); } });
     window.on('page-title-updated', event => { event.preventDefault(); });
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    window.webContents.on('will-navigate', (event, url) => { if (url !== origin + '/') event.preventDefault(); });
+    window.webContents.on('will-navigate', (event, url) => {
+      if (pendingLoginUrl && window.webContents.getURL() === startupPage && url === pendingLoginUrl) { event.preventDefault(); void openLogin(); return; }
+      if (url !== origin + '/') event.preventDefault();
+    });
     window.webContents.on('will-attach-webview', event => event.preventDefault());
     window.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     window.webContents.on('did-start-loading', () => { rendererReady = false; });
@@ -98,26 +121,33 @@ else {
     }
     tray.setToolTip(`Prompt Enhancer · ${shortcutLabel}`);
     // 页面只访问同源本地服务；不向 Codex Desktop 暴露或注入任何能力。
-    window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<meta charset="utf-8"><title>Prompt Enhancer</title><body style="font:18px sans-serif;padding:40px">正在启动 Prompt Enhancer…<p>首次使用可能需要在浏览器完成 OAuth 登录。</p></body>'));
+    showStartup();
     show();
     const node = process.env.POC_NODE_EXE;
     if (!node) throw new Error('请使用“启动Companion.cmd”或 npm run desktop 启动，以定位 Node.js 24。');
     backend = spawn(node, ['server/index.ts'], { cwd: root, windowsHide: true,
-      env: { ...process.env, POC_OPEN_BROWSER: '0' }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+      env: backendEnvironment(process.env), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
     backend.stdout.on('data', data => process.stdout.write(data));
     backend.stderr.on('data', data => process.stderr.write(data));
     backend.on('message', message => {
       if (!message || typeof message !== 'object' || !('type' in message)) return;
       if (quitting) return;
+      if (message.type === 'login-required' && 'url' in message) {
+        try { pendingLoginUrl = loginUrl(message.url); showStartup('请在浏览器完成 ChatGPT 登录。'); void openLogin(); }
+        catch { startupError = '登录地址未通过安全校验，请重新安装固定版本运行时后重试。'; showStartup(startupError); void quit(); }
+      }
+      if (message.type === 'startup-error' && 'message' in message && typeof message.message === 'string') startupError = message.message;
       if (message?.type === 'validated-result') results.accept(message);
       if (message?.type === 'ready' && 'origin' in message && message.origin === origin) {
+        pendingLoginUrl = undefined;
         window.loadURL(origin + '/').then(show).catch(error => { dialog.showErrorBox('页面加载失败', String(error)); void quit(); });
       }
     });
     backend.once('error', error => { dialog.showErrorBox('后端启动失败', String(error)); void quit(); });
     backend.once('exit', code => {
       if (!quitting) {
-        dialog.showErrorBox('后端已退出', `服务退出（${code}）。如旧网页 PoC 正在运行，请先在其终端按 Ctrl+C 关闭，然后重新启动 Companion。`);
+        pendingLoginUrl = undefined;
+        dialog.showErrorBox('Prompt Enhancer 启动失败', startupError || `服务退出（${code}）。请检查 Node.js 24、运行时依赖、构建产物及端口 4173 后重试。`);
         void quit();
       }
     });

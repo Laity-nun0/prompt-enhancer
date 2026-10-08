@@ -20,7 +20,7 @@ export class Projects {
     if (this.current && projectKey(this.current.path) === projectKey(path)) return this.current;
     const saved = this.registry.threads[projectKey(path)];
     const params = { cwd: path, sandbox: 'read-only', approvalPolicy: 'never',
-      developerInstructions: '这是只读本地对话 PoC。可以讨论项目和回答用户，但不要调用工具、修改文件或实际执行项目任务。不要将这个宿主限制当成用户需求。' };
+      developerInstructions: '这是 Prompt Enhancer 的只读独立对话。可以讨论项目和回答用户，但不要调用工具、修改文件或实际执行项目任务。不要将这个宿主限制当成用户需求。' };
     let response: any;
     let restored = false;
     let warning = '';

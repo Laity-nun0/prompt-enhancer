@@ -9,7 +9,7 @@ export function projectPath(input: string) {
   return path;
 }
 export const projectKey = (path: string) => process.platform === 'win32' ? path.toLowerCase() : path;
-const excluded = /^(?:\.git|\.poc|\.codex|\.agents|node_modules|dist|build|coverage|vendor|\.next|\.venv|__pycache__|target|\.env(?:\..*)?|.*\.(?:pem|key|p12|pfx)|credentials.*|secrets.*|auth\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
+const excluded = /^(?:\.git|\.poc|\.local|\.codex|\.agents|\.aws|\.ssh|\.azure|\.kube|\.docker|\.npmrc|\.netrc|_netrc|\.pypirc|id_rsa|id_ed25519|hosts\.yml|node_modules|dist|build|coverage|vendor|\.next|\.venv|__pycache__|target|\.env(?:\..*)?|.*\.(?:pem|key|p12|pfx)|credentials.*|secrets.*|auth\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
 
 // 不递归扫描仓库。模型按轮次请求目录/文件，Node 只执行下面的受限读取。
 export class ProjectContext {

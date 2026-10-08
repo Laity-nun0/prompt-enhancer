@@ -2,6 +2,7 @@
   "name": "prompt-enhancer",
   "version": "0.1.0",
   "description": "Windows desktop companion for context-aware Codex prompt enhancement",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,6 +20,8 @@
     "test:projects": "node --test scripts/verify-projects-unit.ts",
     "test:desktop": "node --test scripts/verify-desktop-unit.ts",
     "desktop": "node scripts/start-desktop.cjs",
+    "prepare:desktop": "node scripts/start-desktop.cjs --check",
+    "verify:first-run": "node scripts/verify-first-run-electron.mjs",
     "test:companion": "node --test scripts/verify-companion-unit.ts"
   },
   "engines": {

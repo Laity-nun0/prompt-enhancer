@@ -2,7 +2,9 @@ import { createServer } from 'node:http';
 import { createServer as createVite } from 'vite';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
-import { createRuntime } from './app-server.ts';
+import { createRuntime, stateDir } from './app-server.ts';
+import { createRequire } from 'node:module';
+const { startupFailure } = createRequire(import.meta.url)('../scripts/startup-support.cjs');
 import { enhance } from './optimizer.ts';
 import { Projects } from './projects.ts';
 import { resolve } from 'node:path';
@@ -22,7 +24,7 @@ let models: ModelOption[] = [];
 const port = 4173;
 const origin = `http://127.0.0.1:${port}`;
 const vite = process.send ? null : await createVite({ server: { middlewareMode: true,
-  fs: { deny: ['**/.poc/**', '**/.git/**', '**/.env*', '**/*.{crt,pem}'] } }, appType: 'spa' });
+  fs: { deny: ['**/.poc/**', '**/.local/**', '**/.git/**', '**/.{aws,ssh,azure,kube,docker,codex,agents}/**', '**/.env*', '**/{.npmrc,.netrc,_netrc,.pypirc,auth.json,credentials*,secrets*}', '**/*.{crt,pem,key,p12,pfx}', `${stateDir.replaceAll('\\', '/')}/**`] } }, appType: 'spa' });
 function state() { const current = projects.current; return { desktopSessions: current ? desktop.list(current.path) : [], threadId: current?.threadId || null, project: current?.path || null, turns: current?.turns || [], busy, model: current?.model || null, models, restored: current?.restored || false, warning: [current?.warning, startupWarning].filter(Boolean).join('；') }; }
 const server = createServer(async (req, res) => {
   if (!ready) { res.statusCode = 503; res.end('服务正在启动或退出'); return; }
@@ -127,7 +129,7 @@ try {
   runtime = await createRuntime(abort.signal);
   models = await listModelOptions(runtime);
   if (abort.signal.aborted) throw new Error('启动已取消');
-  projects = new Projects(runtime, resolve('.poc/projects.json'));
+  projects = new Projects(runtime, resolve(stateDir, 'projects.json'));
   desktop = new DesktopSessions();
   if (projects.registry.currentProject) {
     try { await projects.select(projects.registry.currentProject); startupWarning = desktop.discover(projects.current!.path).join('；'); }
@@ -135,8 +137,12 @@ try {
   }
   if (abort.signal.aborted) throw new Error('启动已取消');
   ready = true;
-  writeFileSync('.poc/ui-session.json', JSON.stringify({ pid: process.pid, origin, ...state() }, (key, value) => ['turns', 'desktopSessions'].includes(key) ? undefined : value, 2));
+  writeFileSync(resolve(stateDir, 'ui-session.json'), JSON.stringify({ pid: process.pid, origin, ...state() }, (key, value) => ['turns', 'desktopSessions'].includes(key) ? undefined : value, 2));
   console.log(`Prompt Enhancer 已启动：${origin}`);
   process.send?.({ type: 'ready', origin });
   if (process.env.POC_OPEN_BROWSER === '1') spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process '${origin}'`], { windowsHide: true, stdio: 'ignore' }).on('error', console.error);
-} catch (error) { console.error(error); process.exitCode = abort.signal.aborted ? 0 : 1; await close(); }
+} catch (error) {
+  const message = startupFailure(error);
+  if (!abort.signal.aborted) { console.error(message); process.send?.({ type: 'startup-error', message }); }
+  process.exitCode = abort.signal.aborted ? 0 : 1; await close();
+}

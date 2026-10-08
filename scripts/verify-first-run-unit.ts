@@ -1,0 +1,141 @@
+import { test, after } from 'node:test';
+import { strict as assert } from 'node:assert';
+import { createRequire } from 'node:module';
+import { mkdtempSync, readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { authenticateChatgpt } from '../server/login.ts';
+const { snapshotTestClipboard, restoreTestClipboard } = createRequire(import.meta.url)('./startup-support.cjs');
+import { EventEmitter } from 'node:events';
+import { runInNewContext } from 'node:vm';
+import { resolve, dirname } from 'node:path';
+const { stateDirectory, loginUrl, startupFailure, backendEnvironment } = createRequire(import.meta.url)('./startup-support.cjs');
+const fixtures: string[] = [];
+function tempDir(prefix: string) { const path = mkdtempSync(join(tmpdir(), prefix)); fixtures.push(path); return path; }
+after(() => { for (const path of fixtures) rmSync(path, { recursive: true, force: true }); });
+
+test('状态隔离保持默认旧路径，拒绝相对目录', () => {
+  const root = tempDir('enhancer-state-');
+  assert.equal(stateDirectory(root, {}), join(root, '.poc'));
+  assert.equal(stateDirectory(root, { PROMPT_ENHANCER_STATE_DIR: root }), root);
+  for (const path of ['', 'relative', '../state']) assert.throws(() => stateDirectory(root, { PROMPT_ENHANCER_STATE_DIR: path }));
+});
+test('只有测试目录标记隔离后端环境，不修改Electron传入的标准环境', () => {
+  const original = { HOME: 'original-home', USERPROFILE: 'original-profile', APPDATA: 'original-roaming', LOCALAPPDATA: 'original-local', POC_OPEN_BROWSER: '1' };
+  assert.deepEqual(backendEnvironment(Object.freeze(original)), { ...original, POC_OPEN_BROWSER: '0' });
+  const profile = join(tempDir('enhancer-backend-env-'), 'profile');
+  const incoming = Object.freeze({ ...original, PROMPT_ENHANCER_TEST_PROFILE_DIR: profile });
+  const backend = backendEnvironment(incoming);
+  assert.equal(backend.HOME, profile); assert.equal(backend.USERPROFILE, profile);
+  assert.equal(backend.APPDATA, join(profile, 'AppData', 'Roaming'));
+  assert.equal(backend.LOCALAPPDATA, join(profile, 'AppData', 'Local'));
+  for (const path of [profile, backend.APPDATA, backend.LOCALAPPDATA]) assert(existsSync(path));
+  for (const key of ['HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA'] as const) assert.equal(incoming[key], original[key]);
+  for (const path of ['', 'relative']) assert.throws(() => backendEnvironment({ PROMPT_ENHANCER_TEST_PROFILE_DIR: path }));
+  const script = readFileSync(resolve('scripts/verify-first-run-electron.mjs'), 'utf8');
+  const envLine = script.split('\n').find(line => line.startsWith('const env ='))!;
+  for (const key of ['HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA']) assert(!new RegExp(`\\b${key}:`).test(envLine));
+});
+test('显式状态目录的Electron缓存路径在单实例锁前设置，默认路径不变', () => {
+  const host = resolve('desktop/main.cjs'), require = createRequire(import.meta.url);
+  for (const state of [undefined, tempDir('enhancer-electron-paths-')]) {
+    const paths: [string, string][] = [];
+    const env = state ? { PROMPT_ENHANCER_STATE_DIR: state } : {};
+    const electron = { app: { setPath(name: string, path: string) { assert(existsSync(path)); paths.push([name, path]); }, requestSingleInstanceLock() { assert.equal(paths.length, state ? 2 : 0); return false; }, quit() {} } };
+    runInNewContext(readFileSync(host, 'utf8'), { require: (name: string) => name === 'electron' ? electron : name.startsWith('.') ? createRequire(host)(name) : require(name), __dirname: dirname(host), module: { exports: {} }, process: { env } });
+    assert.deepEqual(paths, state ? [['userData', join(state, 'electron-user-data')], ['sessionData', join(state, 'electron-session-data')]] : []);
+  }
+});
+test('OAuth 仅允许无凭据且无非默认端口的 HTTPS 官方认证地址', () => {
+  assert.equal(loginUrl('https://auth.openai.com/authorize?state=synthetic'), 'https://auth.openai.com/authorize?state=synthetic');
+  for (const url of [null, 'bad', 'http://auth.openai.com/', 'https://auth.openai.com.evil.test/', 'https://user@auth.openai.com/', 'https://auth.openai.com:444/', 'https://auth.openai.com/#token', 'file:///tmp/login', 'javascript:alert(1)']) assert.throws(() => loginUrl(url));
+});
+test('桌面自动打开浏览器失败后显示手动入口，仅启动页可打开同一受校验地址', async () => {
+  let window: any, opened = 0, failBrowser = true;
+  const backend: any = new EventEmitter(); backend.stdout = new EventEmitter(); backend.stderr = new EventEmitter();
+  class MockWindow extends EventEmitter {
+    url = ''; webContents: any = new EventEmitter();
+    constructor() { super(); window = this; this.webContents.session = { setPermissionRequestHandler() {} }; this.webContents.setWindowOpenHandler = (callback: any) => { this.webContents.openHandler = callback; }; this.webContents.getURL = () => this.url; }
+    loadURL(url: string) { this.url = url; return Promise.resolve(); }
+    isDestroyed() { return false; } isMinimized() { return false; } show() {} focus() {}
+  }
+  const electron = {
+    app: { requestSingleInstanceLock: () => true, on() {}, whenReady: () => Promise.resolve() },
+    BrowserWindow: MockWindow,
+    Tray: class extends EventEmitter { setToolTip() {} setContextMenu() {} },
+    Menu: { setApplicationMenu() {}, buildFromTemplate: () => ({}) }, nativeImage: { createFromPath() {} },
+    globalShortcut: { register: () => true }, clipboard: {}, ipcMain: { handle() {} },
+    dialog: { showErrorBox: () => assert.fail('不应退出或显示错误对话框') },
+    shell: { openExternal: async (url: string) => { assert.equal(url, 'https://auth.openai.com/?state=synthetic'); opened++; if (failBrowser) throw new Error('blocked'); } },
+  };
+  const host = resolve('desktop/main.cjs'); const require = createRequire(import.meta.url);
+  runInNewContext(readFileSync(host, 'utf8'), { require: (name: string) => name === 'electron' ? electron : name === 'node:child_process' ? { spawn: () => backend } : name.startsWith('.') ? createRequire(host)(name) : require(name), __dirname: dirname(host), module: { exports: {} }, process: { env: { POC_NODE_EXE: process.execPath }, stdout: { write() {} }, stderr: { write() {} } }, setTimeout, clearTimeout });
+  await new Promise(done => setImmediate(done));
+  backend.emit('message', { type: 'login-required', url: 'https://auth.openai.com/?state=synthetic' });
+  await new Promise(done => setImmediate(done));
+  assert.equal(opened, 1); assert(decodeURIComponent(window.url).includes('浏览器未能自动打开'));
+  assert(decodeURIComponent(window.url).includes('id="login-link"'));
+  let prevented = false; failBrowser = false;
+  window.webContents.emit('will-navigate', { preventDefault() { prevented = true; } }, 'https://auth.openai.com/?state=synthetic');
+  await new Promise(done => setImmediate(done)); assert(prevented); assert.equal(opened, 2);
+  window.webContents.emit('will-navigate', { preventDefault() {} }, 'https://evil.test/'); assert.equal(opened, 2);
+  backend.emit('message', { type: 'ready', origin: 'http://127.0.0.1:4173' });
+  window.webContents.emit('will-navigate', { preventDefault() {} }, 'https://auth.openai.com/?state=synthetic'); assert.equal(opened, 2);
+  assert.equal(window.webContents.openHandler().action, 'deny');
+});
+test('首次登录通过模拟 RPC 等待指定 loginId，清理一次性地址且不读取另一个状态', async () => {
+  const state = tempDir('enhancer-login-');
+  const old = tempDir('enhancer-old-');
+  writeFileSync(join(old, 'auth.json'), 'existing-account-marker');
+  const calls: string[] = []; let accountReads = 0; let opened = false;
+  await authenticateChatgpt(async method => {
+    calls.push(method);
+    if (method === 'account/read') return { account: ++accountReads === 1 ? null : { type: 'chatgpt' } };
+    return { type: 'chatgpt', loginId: 'new-login', authUrl: 'https://auth.openai.com/authorize?state=synthetic' };
+  }, async (method, matches) => {
+    assert.equal(method, 'account/login/completed');
+    assert(!matches({ loginId: 'old-login' })); assert(matches({ loginId: 'new-login' }));
+    assert(opened); return { success: true };
+  }, state, url => { opened = true; assert.equal(readFileSync(join(state, 'login-url.txt'), 'utf8'), url); });
+  assert.deepEqual(calls, ['account/read', 'account/login/start', 'account/read']);
+  assert(!existsSync(join(state, 'login-url.txt')));
+  assert.equal(readFileSync(join(old, 'auth.json'), 'utf8'), 'existing-account-marker');
+});
+test('登录响应错误、登录失败、超时和浏览器异常均清理地址且不泄漏原始 OAuth 错误', async () => {
+  for (const mode of ['invalid', 'failed', 'timeout', 'browser']) {
+    const state = tempDir('enhancer-failure-');
+    await assert.rejects(authenticateChatgpt(async method => method === 'account/read' ? { account: null } : { type: 'chatgpt', loginId: 'new', authUrl: mode === 'invalid' ? 'https://evil.test/SECRET' : 'https://auth.openai.com/?state=SECRET' }, async () => {
+      if (mode === 'timeout') throw new Error('SECRET');
+      return { success: false, error: 'SECRET' };
+    }, state, () => { if (mode === 'browser') throw new Error('SECRET'); }), error => error instanceof Error && /登录失败/.test(error.message) && !error.message.includes('SECRET'));
+    assert(!existsSync(join(state, 'login-url.txt')));
+  }
+});
+test('已登录时不再次发起登录；错误说明区分端口、运行时与登录', async () => {
+  const state = tempDir('enhancer-existing-');
+  await authenticateChatgpt(async method => { assert.equal(method, 'account/read'); return { account: { type: 'chatgpt' } }; }, async () => assert.fail('不能等待登录'), state, () => assert.fail('不能打开浏览器'));
+  assert.match(startupFailure({ code: 'EADDRINUSE' }), /4173.*占用/);
+  assert.match(startupFailure({ code: 'ENOENT' }), /运行时/);
+  assert.match(startupFailure(new Error('account/login/start SECRET')), /登录失败/);
+  assert(!startupFailure(new Error('https://auth.openai.com/?state=SECRET')).includes('SECRET'));
+});
+
+test('首次验收拒绝覆盖图片或富文本剪贴板，纯文本快照不写入', async () => {
+  let writes = 0;
+  for (const formats of [['image/png'], ['text/plain', 'text/html']]) await assert.rejects(snapshotTestClipboard({ availableFormats: () => formats, readText: () => '', writeText: () => writes++ }), /纯文本剪贴板/);
+  assert.equal(await snapshotTestClipboard({ availableFormats: () => ['text/plain'], readText: () => 'latest text' }), 'latest text');
+  assert.equal(writes, 0);
+});
+
+test('未生成、用户新复制内容及非文本格式均不恢复，只有本轮结果可恢复', async () => {
+  let text = 'user copied later', formats = ['text/plain'], writes = 0;
+  const clipboard = { availableFormats: () => formats, readText: () => text, writeText: (value: string) => { text = value; writes++; } };
+  assert.equal(await restoreTestClipboard(clipboard, 'old', undefined), false);
+  assert.equal(await restoreTestClipboard(clipboard, 'old', 'test result'), false);
+  text = 'test result'; formats = ['text/plain', 'image/png'];
+  assert.equal(await restoreTestClipboard(clipboard, 'old', 'test result'), false);
+  assert.equal(writes, 0);
+  formats = ['text/plain'];
+  assert.equal(await restoreTestClipboard(clipboard, 'old', 'test result'), true);
+  assert.equal(text, 'old'); assert.equal(writes, 1);
+});

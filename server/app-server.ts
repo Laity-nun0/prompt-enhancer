@@ -5,19 +5,27 @@ import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { authenticateChatgpt } from './login.ts';
+const { stateDirectory } = createRequire(import.meta.url)('../scripts/startup-support.cjs');
 
 // Node 24 原生运行 TypeScript；无需构建工具或第三方依赖。
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const state = join(root, '.poc');
+export const stateDir: string = stateDirectory(root);
+const state = stateDir;
 const home = join(state, 'codex-home');
 const profile = join(state, 'profile');
 const cwd = join(state, 'fixture');
+export async function createRuntime(signal?: AbortSignal) {
+signal?.throwIfAborted();
 for (const dir of [home, profile, cwd, join(profile, 'AppData', 'Roaming'), join(profile, 'AppData', 'Local')]) mkdirSync(dir, { recursive: true });
 
 // 使用项目固定版本的独立 CLI，不查找或读取 Desktop 的运行时或内部文件。
 const exe = process.env.POC_CODEX_EXE || join(root, 'node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe');
 assert(existsSync(exe), '未找到独立 Codex runtime，可由宿主设置 POC_CODEX_EXE。');
-const version = spawnSync(exe, ['--version'], { encoding: 'utf8', windowsHide: true }).stdout.trim();
+const versionCheck = spawnSync(exe, ['--version'], { encoding: 'utf8', windowsHide: true });
+if (versionCheck.error || versionCheck.status !== 0) throw new Error('Codex 运行时无法启动');
+const version = versionCheck.stdout.trim();
 assert.equal(version, 'codex-cli 0.161.0', 'runtime 版本变化，需要重新核验 schema。');
 
 // 同时隔离用户级 Skill 搜索目录；不复制现有配置、凭据或插件。
@@ -58,8 +66,6 @@ function snapshot(dir: string, prefix = ''): Record<string, string> {
   return files;
 }
 
-export async function createRuntime(signal?: AbortSignal) {
-signal?.throwIfAborted();
 function step(name: string, detail: any = {}) { console.log(JSON.stringify({step:name,...detail})); }
 const child = spawn(exe, ['app-server', '--stdio'], { cwd, env, windowsHide: true, stdio: ['pipe','pipe','pipe'] });
 let seq = 0;
@@ -83,7 +89,8 @@ function close() {
 function onAbort() { void close(); }
 signal?.addEventListener('abort', onAbort, { once: true });
 child.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-16000); });
-child.on('error', failPending);
+child.on('error', error => { closed = true; failPending(error); });
+child.stdin.on('error', failPending);
 child.on('exit', code => { closed = true; failPending(new Error(`App Server 退出：${code}`)); });
 function failPending(error: Error) {
   for (const p of pending.values()) { clearTimeout(p.timer); p.reject(error); }
@@ -138,29 +145,16 @@ async function initialize() {
   const init = await rpc('initialize', { clientInfo: { name: 'prompt_enhancer_core_probe', version: '0.1.0' } });
   child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');
   step('initialize', { userAgent: init.userAgent });
-  let account = await rpc('account/read', { refreshToken: false });
-  step('account/read', { authenticated: !!account.account, requiresOpenaiAuth: account.requiresOpenaiAuth });
-  if (!account.account) {
-    const login = await rpc('account/login/start', { type: 'chatgpt' });
-    assert.equal(login.type, 'chatgpt');
-    const url = new URL(login.authUrl);
-    assert.equal(url.protocol, 'https:');
-    assert.equal(url.hostname, 'auth.openai.com');
-    // 授权地址仅存于被 gitignore 的本地状态，不写入结果报告。
-    writeFileSync(join(state, 'login-url.txt'), login.authUrl);
+  await authenticateChatgpt(rpc, waitEvent, state, url => {
     step('waiting-for-browser-login');
+    if (process.send) { process.send({ type: 'login-required', url }); return; }
     const browser = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:POC_AUTH_URL'],
-      { env: { ...process.env, POC_AUTH_URL: login.authUrl }, windowsHide: true, stdio: 'ignore' });
-    browser.on('error', () => console.log('浏览器未能自动打开，请由宿主打开 .poc/login-url.txt 中的地址。'));
-    browser.on('exit', code => {
-      if (code !== 0) console.log('浏览器启动被系统阻止，请由宿主打开 .poc/login-url.txt 中的地址；登录流程仍在等待。');
-    });
-    const result = await waitEvent('account/login/completed', p => p.loginId === login.loginId, 15 * 60000);
-    assert(result.success, result.error || '浏览器登录失败');
-    account = await rpc('account/read', { refreshToken: false });
-    assert.equal(account.account?.type, 'chatgpt');
-    step('account/login/completed', { authenticated: true });
-  }
+      { env: { ...process.env, POC_AUTH_URL: url }, windowsHide: true, stdio: 'ignore' });
+    const failed = () => console.log(`浏览器未能自动打开，请打开状态目录 ${state} 下的 login-url.txt 中的地址。`);
+    browser.on('error', failed);
+    browser.on('exit', code => { if (code !== 0) failed(); });
+  });
+  step('account/login/completed', { authenticated: true });
 
 }
 try { await initialize(); } catch(error) { await close(); throw error; }

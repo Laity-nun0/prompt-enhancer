@@ -62,6 +62,30 @@ test('按项目保存 ID、恢复原线程，不复制聊天历史', async () =>
   assert.equal(JSON.parse(saved).threads[projectKey(a)].threadId,replaced.threadId);
 });
 
+test('私密目录不可列出或读取，嵌套与 Windows 路径同样阻止', () => {
+  const project = join(root, 'private-boundaries');
+  mkdirSync(join(project, '.local', 'github-auth'), { recursive: true });
+  mkdirSync(join(project, 'src', '.local'), { recursive: true });
+  writeFileSync(join(project, '.local', 'github-auth', 'hosts.yml'), 'synthetic credential');
+  writeFileSync(join(project, 'src', '.local', 'notes.txt'), 'synthetic private note');
+  writeFileSync(join(project, 'src', 'main.ts'), 'export const value = 1;');
+  for (const name of ['.aws', '.ssh', '.azure', '.kube', '.docker']) {
+    mkdirSync(join(project, name));
+    writeFileSync(join(project, name, 'config'), 'synthetic credential');
+  }
+  for (const name of ['.npmrc', '.netrc', '_netrc', '.pypirc', 'id_rsa', 'id_ed25519', 'hosts.yml']) writeFileSync(join(project, name), 'synthetic credential');
+  const context = new ProjectContext(project);
+  context.initial();
+  assert.deepEqual(context.directories['.'], ['src/']);
+  context.list('src');
+  assert.deepEqual(context.directories.src, ['main.ts']);
+  for (const name of ['.local', '.local/github-auth', 'src/.local', '.aws', '.ssh', '.azure', '.kube', '.docker']) assert.throws(() => context.list(name), /路径不可读取/);
+  for (const name of ['.local/github-auth/hosts.yml', '.local\\github-auth\\hosts.yml', 'src/.local/notes.txt', '.LOCAL/github-auth/hosts.yml', '.aws/config', '.ssh/config', '.azure/config', '.kube/config', '.docker/config', '.npmrc', '.netrc', '_netrc', '.pypirc', 'id_rsa', 'id_ed25519', 'hosts.yml']) assert.throws(() => context.read(name), /路径不可读取/);
+  context.read('src/main.ts');
+  assert.deepEqual(Object.keys(context.files), ['src/main.ts']);
+  context.assertUnchanged();
+});
+
 test('重启后未加载的线程先 resume；不覆盖 cwd，不误用其他项目', async () => {
   const file = join(root, 'unloaded.json');
   const saved = { version: 1, currentProject: a, threads: { [projectKey(a)]: { threadId: 'saved' } } };
