@@ -139,3 +139,48 @@ test('未生成、用户新复制内容及非文本格式均不恢复，只有�
   assert.equal(await restoreTestClipboard(clipboard, 'old', 'test result'), true);
   assert.equal(text, 'old'); assert.equal(writes, 1);
 });
+
+for (const scenario of [
+  { name: '首选可用', results: [true], label: 'Ctrl+Alt+E', warning: '' },
+  { name: '首选冲突后备用可用', results: [false, true], label: 'Alt+Shift+E', warning: '使用 Alt+Shift+E 唤起。' },
+  { name: '均被占用', results: [false, false], label: '快捷键不可用', warning: '快捷键暂不可用，请从托盘打开，或关闭占用程序后重启 Companion。' }
+]) test(`简化快捷键：${scenario.name}，桥接和托盘展示一致`, async () => {
+  let window: any, tooltip = '';
+  const registrations: string[] = [], sent: unknown[][] = [];
+  const callbacks = new Map<string, () => Promise<void>>(), handlers = new Map<string, (event: any) => any>();
+  const backend: any = new EventEmitter(); backend.stdout = new EventEmitter(); backend.stderr = new EventEmitter();
+  class MockWindow extends EventEmitter {
+    webContents: any = new EventEmitter();
+    constructor() {
+      super(); window = this;
+      this.webContents.mainFrame = { url: '' };
+      this.webContents.session = { setPermissionRequestHandler() {} };
+      this.webContents.setWindowOpenHandler = () => {};
+      this.webContents.getURL = () => this.webContents.mainFrame.url;
+      this.webContents.send = (...args: unknown[]) => sent.push(args);
+    }
+    loadURL(url: string) { this.webContents.mainFrame.url = url; return Promise.resolve(); }
+    isDestroyed() { return false; } isMinimized() { return false; } show() {} focus() {}
+  }
+  const electron = {
+    app: { requestSingleInstanceLock: () => true, on() {}, whenReady: () => Promise.resolve() },
+    BrowserWindow: MockWindow,
+    Tray: class extends EventEmitter { setToolTip(value: string) { tooltip = value; } setContextMenu() {} },
+    Menu: { setApplicationMenu() {}, buildFromTemplate: () => ({}) }, nativeImage: { createFromPath() {} },
+    globalShortcut: { register(key: string, callback: () => Promise<void>) { registrations.push(key); const registered = scenario.results[registrations.length - 1]; if (registered) callbacks.set(key, callback); return registered; } },
+    clipboard: { readText: () => 'synthetic draft' }, ipcMain: { handle(name: string, callback: (event: any) => any) { handlers.set(name, callback); } },
+    dialog: { showErrorBox: () => assert.fail('快捷键冲突不能阻止应用启动') }, shell: {},
+  };
+  const host = resolve('desktop/main.cjs'), require = createRequire(import.meta.url);
+  runInNewContext(readFileSync(host, 'utf8'), { require: (name: string) => name === 'electron' ? electron : name === 'node:child_process' ? { spawn: () => backend } : name.startsWith('.') ? createRequire(host)(name) : require(name), __dirname: dirname(host), module: { exports: {} }, process: { env: { POC_NODE_EXE: process.execPath }, stdout: { write() {} }, stderr: { write() {} } }, setTimeout, clearTimeout });
+  await new Promise(done => setImmediate(done));
+  assert.deepEqual(registrations, ['Control+Alt+E', 'Alt+Shift+E'].slice(0, scenario.results.length));
+  await window.loadURL('http://127.0.0.1:4173/');
+  const state = handlers.get('companion:ready')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
+  assert.equal(state.shortcut, scenario.label); assert.equal(state.shortcutWarning, scenario.warning);
+  assert.equal(tooltip, `Prompt Enhancer · ${scenario.label}`);
+  assert(!state.shortcutWarning.includes('Ctrl+Shift+E 不可用'));
+  for (const callback of callbacks.values()) await callback();
+  assert.equal(sent.length, callbacks.size);
+  if (callbacks.size) assert.deepEqual(sent[0], ['companion:draft', 'synthetic draft']);
+});

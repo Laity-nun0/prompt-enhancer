@@ -78,7 +78,7 @@ export function App() {
   const [notice, setNotice] = useState('');
   const [clipboardDraft, setClipboardDraft] = useState<string | null>(null);
   const [companionWarning, setCompanionWarning] = useState('');
-  const [shortcut, setShortcut] = useState('Ctrl+Shift+E');
+  const [shortcut, setShortcut] = useState('Ctrl+Alt+E');
   const latest = useRef({ draft, busy });
   latest.current = { draft, busy };
   function loadClipboard(text: string) {

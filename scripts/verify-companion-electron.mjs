@@ -94,7 +94,7 @@ try {
   report.ownedProcesses = processes.filter(p => owned.includes(p.ProcessId));
   assert(report.ownedProcesses.some(p => p.Name === 'codex.exe'));
   assert.equal((await fetch('http://127.0.0.1:4173/@fs/' + root + '/server/index.ts')).status, 404);
-  report.shortcut = await app.evaluate(({ globalShortcut }) => ['Control+Shift+E', 'Control+Alt+Shift+E'].find(key => globalShortcut.isRegistered(key)));
+  report.shortcut = await app.evaluate(({ globalShortcut }) => ['Control+Alt+E', 'Alt+Shift+E'].find(key => globalShortcut.isRegistered(key)));
   assert(report.shortcut);
   check(`Windows 全局快捷键注册成功：${report.shortcut}`);
   originalClipboard = await app.evaluate(({ clipboard }) => clipboard.readText());

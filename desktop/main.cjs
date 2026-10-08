@@ -14,8 +14,8 @@ if (process.env.PROMPT_ENHANCER_STATE_DIR !== undefined) {
   }
 }
 const origin = 'http://127.0.0.1:4173';
-const shortcut = 'Control+Shift+E';
-let shortcutLabel = 'Ctrl+Shift+E';
+const shortcut = 'Control+Alt+E';
+let shortcutLabel = 'Ctrl+Alt+E';
 const results = new ValidatedResults();
 let window, tray, backend, trayMenu;
 let quitting = false, stopped = false, rendererReady = false;
@@ -90,7 +90,7 @@ else {
     window.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     window.webContents.on('did-start-loading', () => { rendererReady = false; });
     tray = new Tray(nativeImage.createFromPath(join(__dirname, 'icon.png')));
-    tray.setToolTip('Prompt Enhancer · Ctrl+Shift+E');
+    tray.setToolTip('Prompt Enhancer · Ctrl+Alt+E');
     trayMenu = Menu.buildFromTemplate([
       { label: '打开 Prompt Enhancer', click: show },
       { label: '隐藏', click: () => window.hide() },
@@ -111,12 +111,12 @@ else {
       if (await clipboard.readText() !== prompt) throw new Error('剪贴板写入未成功，请手动复制结果');
     });
     if (!globalShortcut.register(shortcut, importClipboard)) {
-      if (globalShortcut.register('Control+Alt+Shift+E', importClipboard)) {
-        shortcutLabel = 'Ctrl+Alt+Shift+E';
-        shortcutWarning = 'Ctrl+Shift+E 不可用，已改用 Ctrl+Alt+Shift+E 唤起。';
+      if (globalShortcut.register('Alt+Shift+E', importClipboard)) {
+        shortcutLabel = 'Alt+Shift+E';
+        shortcutWarning = '使用 Alt+Shift+E 唤起。';
       } else {
         shortcutLabel = '快捷键不可用';
-        shortcutWarning = 'Ctrl+Shift+E 和 Ctrl+Alt+Shift+E 均无法注册。请从托盘打开，或关闭占用程序后重启 Companion。';
+        shortcutWarning = '快捷键暂不可用，请从托盘打开，或关闭占用程序后重启 Companion。';
       }
     }
     tray.setToolTip(`Prompt Enhancer · ${shortcutLabel}`);
