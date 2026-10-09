@@ -1,19 +1,23 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut, clipboard, ipcMain, dialog, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const { join } = require('node:path');
+const { randomBytes } = require('node:crypto');
 const { mkdirSync } = require('node:fs');
 const { ValidatedResults } = require('./results.cjs');
-const { loginUrl, stateDirectory, backendEnvironment } = require('../scripts/startup-support.cjs');
+const { loginUrl, stateDirectory, migrateLegacyState, backendEnvironment } = require('../scripts/startup-support.cjs');
 
-const root = join(__dirname, '..');
-if (process.env.PROMPT_ENHANCER_STATE_DIR !== undefined) {
-  const state = stateDirectory(root, process.env);
+const root = app.isPackaged ? join(process.resourcesPath, 'app.asar.unpacked') : join(__dirname, '..');
+let state, stateSetupError;
+try {
+  state = stateDirectory(root, process.env);
+  if (!process.env.PROMPT_ENHANCER_STATE_DIR) migrateLegacyState(root, state);
   for (const [name, path] of [['userData', join(state, 'electron-user-data')], ['sessionData', join(state, 'electron-session-data')]]) {
     mkdirSync(path, { recursive: true });
     app.setPath(name, path);
   }
-}
+} catch (error) { stateSetupError = error; }
 const origin = 'http://127.0.0.1:4173';
+const hostToken = randomBytes(32).toString('hex');
 const shortcut = 'Control+Alt+E';
 let shortcutLabel = 'Ctrl+Alt+E';
 const results = new ValidatedResults();
@@ -69,7 +73,8 @@ async function quit() {
   stopped = true; tray?.destroy(); app.quit();
 }
 
-if (!app.requestSingleInstanceLock()) app.quit();
+if (stateSetupError) { dialog.showErrorBox('状态目录初始化失败', String(stateSetupError)); app.quit(); }
+else if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', importClipboard);
   app.on('before-quit', event => { if (!stopped) { event.preventDefault(); void quit(); } });
@@ -87,6 +92,9 @@ else {
       if (url !== origin + '/') event.preventDefault();
     });
     window.webContents.on('will-attach-webview', event => event.preventDefault());
+    window.webContents.session.webRequest?.onBeforeSendHeaders({ urls: [origin + '/*'] }, (details, callback) => {
+      callback({ requestHeaders: { ...details.requestHeaders, 'X-Prompt-Enhancer-Host': hostToken } });
+    });
     window.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     window.webContents.on('did-start-loading', () => { rendererReady = false; });
     tray = new Tray(nativeImage.createFromPath(join(__dirname, 'icon.png')));
@@ -123,10 +131,15 @@ else {
     // 页面只访问同源本地服务；不向 Codex Desktop 暴露或注入任何能力。
     showStartup();
     show();
-    const node = process.env.POC_NODE_EXE;
-    if (!node) throw new Error('请使用“启动Companion.cmd”或 npm run desktop 启动，以定位 Node.js 24。');
-    backend = spawn(node, ['server/index.ts'], { cwd: root, windowsHide: true,
-      env: backendEnvironment(process.env), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
+    const node = app.isPackaged ? process.execPath : process.env.PROMPT_ENHANCER_NODE_EXE;
+    if (!node) throw new Error('源码开发请执行 npm run desktop；正式使用请启动 Prompt Enhancer.exe。');
+    const env = backendEnvironment({ ...process.env, PROMPT_ENHANCER_STATE_DIR: state, PROMPT_ENHANCER_HOST_TOKEN: hostToken });
+    if (app.isPackaged) {
+      env.ELECTRON_RUN_AS_NODE = '1';
+      env.PROMPT_ENHANCER_CODEX_EXE = join(process.resourcesPath, 'codex', 'bin', 'codex.exe');
+    }
+    backend = spawn(node, [app.isPackaged ? 'server/index.mjs' : 'server/index.ts'], { cwd: root, windowsHide: true,
+      env, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
     backend.stdout.on('data', data => process.stdout.write(data));
     backend.stderr.on('data', data => process.stderr.write(data));
     backend.on('message', message => {
@@ -134,7 +147,7 @@ else {
       if (quitting) return;
       if (message.type === 'login-required' && 'url' in message) {
         try { pendingLoginUrl = loginUrl(message.url); showStartup('请在浏览器完成 ChatGPT 登录。'); void openLogin(); }
-        catch { startupError = '登录地址未通过安全校验，请重新安装固定版本运行时后重试。'; showStartup(startupError); void quit(); }
+        catch { startupError = '登录地址未通过安全校验，请重新下载完整 EXE后重试。'; showStartup(startupError); void quit(); }
       }
       if (message.type === 'startup-error' && 'message' in message && typeof message.message === 'string') startupError = message.message;
       if (message?.type === 'validated-result') results.accept(message);
@@ -147,7 +160,7 @@ else {
     backend.once('exit', code => {
       if (!quitting) {
         pendingLoginUrl = undefined;
-        dialog.showErrorBox('Prompt Enhancer 启动失败', startupError || `服务退出（${code}）。请检查 Node.js 24、运行时依赖、构建产物及端口 4173 后重试。`);
+        dialog.showErrorBox('Prompt Enhancer 启动失败', startupError || `服务退出（${code}）。请检查应用文件、状态目录及端口 4173 后重试。`);
         void quit();
       }
     });

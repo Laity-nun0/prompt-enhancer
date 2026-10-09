@@ -1,7 +1,5 @@
 import { createServer } from 'node:http';
-import { createServer as createVite } from 'vite';
 import { writeFileSync, readFileSync } from 'node:fs';
-import { spawn } from 'node:child_process';
 import { createRuntime, stateDir } from './app-server.ts';
 import { createRequire } from 'node:module';
 const { startupFailure } = createRequire(import.meta.url)('../scripts/startup-support.cjs');
@@ -23,13 +21,12 @@ let busy = false;
 let models: ModelOption[] = [];
 const port = 4173;
 const origin = `http://127.0.0.1:${port}`;
-const vite = process.send ? null : await createVite({ server: { middlewareMode: true,
-  fs: { deny: ['**/.poc/**', '**/.local/**', '**/.git/**', '**/.{aws,ssh,azure,kube,docker,codex,agents}/**', '**/.env*', '**/{.npmrc,.netrc,_netrc,.pypirc,auth.json,credentials*,secrets*}', '**/*.{crt,pem,key,p12,pfx}', `${stateDir.replaceAll('\\', '/')}/**`] } }, appType: 'spa' });
+if (!process.send) throw new Error('请通过桌面应用启动服务，不提供独立网页入口');
 function state() { const current = projects.current; return { desktopSessions: current ? desktop.list(current.path) : [], threadId: current?.threadId || null, project: current?.path || null, turns: current?.turns || [], busy, model: current?.model || null, models, restored: current?.restored || false, warning: [current?.warning, startupWarning].filter(Boolean).join('；') }; }
 const server = createServer(async (req, res) => {
+  if (!process.env.PROMPT_ENHANCER_HOST_TOKEN || req.headers['x-prompt-enhancer-host'] !== process.env.PROMPT_ENHANCER_HOST_TOKEN) { res.statusCode = 403; res.end('仅允许桌面应用访问'); return; }
   if (!ready) { res.statusCode = 503; res.end('服务正在启动或退出'); return; }
   if (!req.url?.startsWith('/api/')) {
-    if (vite) return vite.middlewares(req, res);
     // 桌面入口只提供构建产物，不公开 Vite 开发文件读取接口。
     const path = req.url === '/' ? '/index.html' : req.url || '';
     if (req.method !== 'GET' || !/^\/(?:index\.html|assets\/[\w.-]+\.(?:js|css))$/.test(path)) { res.statusCode = 404; res.end(); return; }
@@ -114,7 +111,7 @@ function close() {
     ready = false; abort.abort();
     const stopped = new Promise<void>(done => server.close(() => done()));
     server.closeAllConnections();
-    await Promise.all([runtime?.close(), vite?.close(), stopped]);
+    await Promise.all([runtime?.close(), stopped]);
     if (process.connected) process.disconnect?.();
   })();
 }
@@ -122,9 +119,9 @@ process.once('SIGINT', () => void close());
 process.once('SIGTERM', () => void close());
 process.on('message', message => { if ((message as any)?.type === 'shutdown') void close(); });
 // 宿主意外退出时 IPC 断开，只清理本服务自己持有的资源。
-if (process.send) process.once('disconnect', () => void close());
+process.once('disconnect', () => void close());
 try {
-  // 先独占固定端口，再打开 Registry/启动 runtime，拒绝与网页入口并行写状态。
+  // 先独占固定端口，再打开 Registry/启动 runtime，拒绝多个实例并行写状态。
   await new Promise<void>((done, fail) => { server.once('error', fail); server.listen(port, '127.0.0.1', done); });
   runtime = await createRuntime(abort.signal);
   models = await listModelOptions(runtime);
@@ -140,7 +137,6 @@ try {
   writeFileSync(resolve(stateDir, 'ui-session.json'), JSON.stringify({ pid: process.pid, origin, ...state() }, (key, value) => ['turns', 'desktopSessions'].includes(key) ? undefined : value, 2));
   console.log(`Prompt Enhancer 已启动：${origin}`);
   process.send?.({ type: 'ready', origin });
-  if (process.env.POC_OPEN_BROWSER === '1') spawn('powershell.exe', ['-NoProfile', '-Command', `Start-Process '${origin}'`], { windowsHide: true, stdio: 'ignore' }).on('error', console.error);
 } catch (error) {
   const message = startupFailure(error);
   if (!abort.signal.aborted) { console.error(message); process.send?.({ type: 'startup-error', message }); }

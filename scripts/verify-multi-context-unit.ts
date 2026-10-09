@@ -5,9 +5,9 @@ import { resolve, join } from 'node:path';
 import { DesktopSessions, selectedDesktopIds } from '../server/desktop-sessions.ts';
 import { enhanceDesktop, validateContextSources } from '../server/desktop-optimizer.ts';
 
-mkdirSync('.poc/unit', { recursive: true });
+mkdirSync('.local/test', { recursive: true });
 const cwd = process.cwd();
-const dir = () => mkdtempSync(resolve('.poc/unit/multi-'));
+const dir = () => mkdtempSync(resolve('.local/test/multi-'));
 function history(id: string, project = cwd, text = id) {
   return [
     { type: 'session_meta', payload: { id, cwd: project, originator: 'Codex Desktop' } },

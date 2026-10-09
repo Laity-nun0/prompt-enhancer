@@ -5,8 +5,8 @@ import { createRuntime } from '../server/app-server.ts';
 import { enhanceDesktop } from '../server/desktop-optimizer.ts';
 import type { DesktopSession } from '../server/desktop-sessions.ts';
 
-mkdirSync('.poc/unit', { recursive: true });
-const cwd = mkdtempSync(resolve('.poc/unit/enhancement-real-'));
+mkdirSync('.local/test', { recursive: true });
+const cwd = mkdtempSync(resolve('.local/test/enhancement-real-'));
 mkdirSync(join(cwd, 'src'));
 writeFileSync(join(cwd, 'package.json'), '{"name":"enhancement-fixture","private":true}');
 writeFileSync(join(cwd, 'README.md'), '# 示例应用\n首页标题和搜索框分别实现在 src/header.ts 与 src/search.ts。\n');

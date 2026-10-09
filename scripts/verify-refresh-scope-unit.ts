@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 
 import { resolve, join } from 'node:path';
 import { DesktopSessions } from '../server/desktop-sessions.ts';
 import { applyScopeRemovals } from '../server/scope-validator.ts';
-mkdirSync('.poc/unit', {recursive:true});
+mkdirSync('.local/test', {recursive:true});
 const cwd = process.cwd();
 function history(id: string, count: number) {
   const rows: any[] = [{ type: 'session_meta', payload: { id, cwd, originator: 'Codex Desktop' } }];
@@ -15,7 +15,7 @@ function history(id: string, count: number) {
   return rows.map(r=>JSON.stringify({...r,timestamp:'2026-09-23T01:00:00Z'})).join('\n');
 }
 test('无 Hook：已导入 A 从 4 到 7 Turns，按需同步最新消息且不读取 B/C', () => {
-  const root=mkdtempSync(resolve('.poc/unit/refresh-')); const registry=new DesktopSessions(root);
+  const root=mkdtempSync(resolve('.local/test/refresh-')); const registry=new DesktopSessions(root);
   for (const id of ['A','B','C']) { writeFileSync(join(root,id+'.jsonl'),history(id,4)); registry.import(join(root,id+'.jsonl')); }
   const otherBefore=JSON.stringify([registry.sessions.B,registry.sessions.C]);
   unlinkSync(join(root,'B.jsonl')); unlinkSync(join(root,'C.jsonl'));
@@ -27,7 +27,7 @@ test('无 Hook：已导入 A 从 4 到 7 Turns，按需同步最新消息且不�
   assert.deepEqual(new DesktopSessions(root).sessions.A,fresh);
 });
 test('同步失败不覆盖旧记录；拒绝 session/cwd 错配和损坏文件', () => {
-  const root=mkdtempSync(resolve('.poc/unit/refresh-')); const file=join(root,'A.jsonl'); const registry=new DesktopSessions(root);
+  const root=mkdtempSync(resolve('.local/test/refresh-')); const file=join(root,'A.jsonl'); const registry=new DesktopSessions(root);
   writeFileSync(file,history('A',4)); registry.import(file); const old=structuredClone(registry.sessions.A);
   for (const content of [history('B',7),history('A',7)+'\nBROKEN']) {
     writeFileSync(file,content); assert.throws(()=>registry.refresh(cwd,'A')); assert.deepEqual(registry.sessions.A,old);

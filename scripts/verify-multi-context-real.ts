@@ -6,8 +6,8 @@ import { enhanceDesktop } from '../server/desktop-optimizer.ts';
 import type { DesktopSession } from '../server/desktop-sessions.ts';
 import { enhancementCases, evaluateEnhancement } from './enhancement-cases.ts';
 
-mkdirSync('.poc/unit', { recursive: true });
-const cwd = mkdtempSync(resolve('.poc/unit/multi-real-'));
+mkdirSync('.local/test', { recursive: true });
+const cwd = mkdtempSync(resolve('.local/test/multi-real-'));
 writeFileSync(join(cwd, 'package.json'), '{"name":"multi-real-fixture","private":true}');
 function session(sessionId: string, text: string): DesktopSession {
   return { sessionId, cwd, transcriptPath: null, title: text.slice(0, 40), lastActiveAt: '2026-09-24T00:00:00Z', imported: true,
@@ -26,7 +26,7 @@ try {
     session('B', '首页标题候选为“星河计划”，与另一候选之间尚未决定。')
   ], '按讨论过的标题方案修改首页。');
   const conflictCheck = evaluateEnhancement(enhancementCases.find(c => c.id === 'unresolved-conflict')!, conflicting);
-  writeFileSync('.poc/multi-real-results.json', JSON.stringify({ passed: conflictCheck.passed, complementary, conflicting, conflictCheck }, null, 2));
+  writeFileSync('.local/multi-real-results.json', JSON.stringify({ passed: conflictCheck.passed, complementary, conflicting, conflictCheck }, null, 2));
   assert(conflictCheck.passed, `未决冲突处理不完整：${JSON.stringify(conflictCheck.failures)}；${conflicting.optimizedPrompt}`);
   console.log(JSON.stringify({ passed: true, complementary: complementary.optimizedPrompt, conflictWarnings: conflicting.warnings, conflictAssumptions: conflicting.assumptions }));
 } finally { await runtime.close(); }

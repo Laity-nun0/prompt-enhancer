@@ -19,3 +19,4 @@ credentials.json
 *.key
 .DS_Store
 Thumbs.db
+release/

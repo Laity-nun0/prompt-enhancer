@@ -9,7 +9,7 @@ import { optimizerInstructions, outputSchema } from '../server/optimizer.ts';
 
 // Node 24 原生运行 TypeScript；无需构建工具或第三方依赖。
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const state = join(root, '.poc');
+const state = join(root, '.local', 'core-probe');
 const home = join(state, 'codex-home');
 const profile = join(state, 'profile');
 const cwd = join(state, 'fixture');
@@ -17,8 +17,8 @@ const reportFile = join(state, 'result.json');
 for (const dir of [home, profile, cwd, join(profile, 'AppData', 'Roaming'), join(profile, 'AppData', 'Local')]) mkdirSync(dir, { recursive: true });
 
 // 仅发现独立 npm CLI，不查找或读取 Desktop 的运行时或内部文件。
-const exe = process.env.POC_CODEX_EXE || join(root, 'node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe');
-assert(existsSync(exe), '未找到独立 Codex runtime，可由宿主设置 POC_CODEX_EXE。');
+const exe = process.env.PROMPT_ENHANCER_CODEX_EXE || join(root, 'node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe');
+assert(existsSync(exe), '未找到独立 Codex runtime，可由宿主设置 PROMPT_ENHANCER_CODEX_EXE。');
 const version = spawnSync(exe, ['--version'], { encoding: 'utf8', windowsHide: true }).stdout.trim();
 assert.equal(version, 'codex-cli 0.161.0', 'runtime 版本变化，需要重新核验 schema。');
 
@@ -139,11 +139,11 @@ try {
     // 授权地址仅存于被 gitignore 的本地状态，不写入结果报告。
     writeFileSync(join(state, 'login-url.txt'), login.authUrl);
     step('waiting-for-browser-login');
-    const browser = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:POC_AUTH_URL'],
-      { env: { ...process.env, POC_AUTH_URL: login.authUrl }, windowsHide: true, stdio: 'ignore' });
-    browser.on('error', () => console.log('浏览器未能自动打开，请由宿主打开 .poc/login-url.txt 中的地址。'));
+    const browser = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath $env:PROMPT_ENHANCER_AUTH_URL'],
+      { env: { ...process.env, PROMPT_ENHANCER_AUTH_URL: login.authUrl }, windowsHide: true, stdio: 'ignore' });
+    browser.on('error', () => console.log('浏览器未能自动打开，请由宿主打开 .local/core-probe/login-url.txt 中的地址。'));
     browser.on('exit', code => {
-      if (code !== 0) console.log('浏览器启动被系统阻止，请由宿主打开 .poc/login-url.txt 中的地址；登录流程仍在等待。');
+      if (code !== 0) console.log('浏览器启动被系统阻止，请由宿主打开 .local/core-probe/login-url.txt 中的地址；登录流程仍在等待。');
     });
     const result = await waitEvent('account/login/completed', p => p.loginId === login.loginId, 15 * 60000);
     assert(result.success, result.error || '浏览器登录失败');

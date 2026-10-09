@@ -7,12 +7,12 @@ import { strict as assert } from 'node:assert';
 const require = createRequire(import.meta.url);
 const root = resolve('.');
 execFileSync(process.execPath, ['scripts/start-desktop.cjs', '--check'], { cwd: root, stdio: 'inherit' });
-const { _electron: electron } = require(process.env.POC_PLAYWRIGHT_MODULE || 'playwright');
+const { _electron: electron } = require(process.env.PROMPT_ENHANCER_PLAYWRIGHT_MODULE || 'playwright');
 if (!process.argv.includes('--run')) {
   console.log('首次启动准备完成。执行 node scripts/verify-first-run-electron.mjs --run 后，在新打开的浏览器中完成 OAuth。不会复用现有账号或 Desktop 历史。');
   process.exit(0);
 }
-assert(process.env.POC_VERIFY_MODEL && process.env.POC_VERIFY_EFFORT, '真实增强验收须显式设置 POC_VERIFY_MODEL 和 POC_VERIFY_EFFORT');
+assert(process.env.PROMPT_ENHANCER_VERIFY_MODEL && process.env.PROMPT_ENHANCER_VERIFY_EFFORT, '真实增强验收须显式设置 PROMPT_ENHANCER_VERIFY_MODEL 和 PROMPT_ENHANCER_VERIFY_EFFORT');
 // 不停止已有服务；端口被占用时要求操作者自行安排验收时段。
 try { await fetch('http://127.0.0.1:4173', { signal: AbortSignal.timeout(1000) }); throw new Error('端口 4173 已占用，请先退出现有应用再运行验收。'); }
 catch (error) { if (error.message.includes('4173')) throw error; }
@@ -32,7 +32,7 @@ const rows = [
 ];
 writeFileSync(transcript, rows.map(row => JSON.stringify({ ...row, timestamp: '2026-10-08T00:00:00Z' })).join('\n'));
 // Electron 保留系统标准用户环境；测试用户目录仅由宿主用于 Node 后端。
-const env = { ...process.env, PROMPT_ENHANCER_STATE_DIR: state, PROMPT_ENHANCER_TEST_PROFILE_DIR: profile, POC_NODE_EXE: process.execPath };
+const env = { ...process.env, PROMPT_ENHANCER_STATE_DIR: state, PROMPT_ENHANCER_TEST_PROFILE_DIR: profile, PROMPT_ENHANCER_NODE_EXE: process.execPath };
 delete env.ELECTRON_RUN_AS_NODE;
 const report = { passed: false, stage: 'launch', checks: [], stateDirectory: state };
 assert(!existsSync(join(state, 'codex-home', 'auth.json')), '新状态目录启动前不应存在凭据');
@@ -47,7 +47,8 @@ try {
   await page.waitForURL('http://127.0.0.1:4173/', { timeout: 15 * 60000 });
   assert(existsSync(join(state, 'codex-home', 'auth.json')), '应在新状态目录保存本次登录凭据');
   assert(!existsSync(join(state, 'login-url.txt')), '登录完成须清理一次性地址');
-  const api = async path => (await fetch('http://127.0.0.1:4173' + path)).json();
+  const desktopFetch = (url, options) => page.evaluate(async ({ url, options }) => { const response = await fetch(url, options); return { status: response.status, data: await response.json() }; }, { url, options });
+  const api = async path => (await desktopFetch(path)).data;
   const initial = await api('/api/state'); assert.equal(initial.project, null); assert.deepEqual(initial.desktopSessions, []);
   report.checks.push('新浏览器登录完成，初始项目与Desktop历史为空');
   report.stage = 'project-and-context';
@@ -56,16 +57,16 @@ try {
   await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await page.waitForFunction(path => document.querySelector('[data-testid="current-project"]')?.textContent === path, project);
   const current = await api('/api/state');
-  const imported = await fetch('http://127.0.0.1:4173/api/desktop/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: current.threadId, path: transcript }) });
+  const imported = await desktopFetch('/api/desktop/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: current.threadId, path: transcript }) });
   assert.equal(imported.status, 200); await page.reload();
   await page.locator('#desktop-session').selectOption('first-run-synthetic');
   const catalog = await api('/api/state');
-  const option = catalog.models.find(item => item.model === process.env.POC_VERIFY_MODEL);
-  assert(option?.supportedReasoningEfforts.includes(process.env.POC_VERIFY_EFFORT), '指定模型及强度须在可用目录中');
+  const option = catalog.models.find(item => item.model === process.env.PROMPT_ENHANCER_VERIFY_MODEL);
+  assert(option?.supportedReasoningEfforts.includes(process.env.PROMPT_ENHANCER_VERIFY_EFFORT), '指定模型及强度须在可用目录中');
   await page.locator('.model-button').click(); await page.locator('.model-select-trigger').click();
   await page.locator('.model-menu-item').filter({ hasText: option.displayName.replace(/^(GPT-[\d.]+)-/, '$1 ') }).click();
   const slider = page.locator('#enhance-effort'); await slider.press('Home');
-  for (let i = 0; i < option.supportedReasoningEfforts.indexOf(process.env.POC_VERIFY_EFFORT); i++) await slider.press('ArrowRight');
+  for (let i = 0; i < option.supportedReasoningEfforts.indexOf(process.env.PROMPT_ENHANCER_VERIFY_EFFORT); i++) await slider.press('ArrowRight');
   await slider.press('Escape');
   const beforeProject = readFileSync(join(project, 'README.md'), 'utf8');
   const beforeTranscript = readFileSync(transcript, 'utf8');

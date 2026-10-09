@@ -2,77 +2,76 @@
 
 Windows 上的 Codex 提问增强桌面伴侣。选择本地项目及已有 Codex Desktop 对话，把尚未发送的草稿补充为更明确、有上下文依据的提问。
 
-本项目是独立的 Electron 应用，不是安装到 Codex Desktop 内的正式插件。它不操作 Codex 输入框或发送按钮；增强成功后复制结果，由你审阅并手动粘贴、发送。
+本项目是独立的 Electron 应用，不是安装到 Codex Desktop 内的插件。它不操作 Codex 输入框或发送按钮；增强成功后复制结果，由你审阅并手动粘贴、发送。
 
-## 环境要求
+## 下载与启动
 
-- Windows x64。
-- Node.js 24 或更新版本，以及 npm。
-- Codex Desktop 已有项目对话，或在本应用中建立独立对话作为上下文。
-- 可登录 Codex 的 ChatGPT 账号及模型访问权限。增强需要联网并消耗模型额度，不是离线处理。
+支持 Windows x64。下载 [免安装 EXE](https://github.com/Laity-nun0/prompt-enhancer/releases/latest/download/Prompt-Enhancer-Windows-x64.exe)，双击 `Prompt-Enhancer-Windows-x64.exe` 即可使用，无需安装、CMD 或配套目录。程序自带 Electron、Node 后端和固定版本的独立 Codex 可执行文件，无需另外安装 Node.js、npm 或 Codex CLI。
 
-独立 Codex CLI 固定为项目依赖 `@openai/codex@0.161.0`。程序不使用 Desktop 内置运行时，也不复制其登录凭据。
+启动时会自动将内部资源展开到系统临时目录，首次启动可能稍慢；退出后自动清理。运行状态与账号数据保存在用户目录，替换 EXE 不会删除这些数据。
 
-## 安装与启动
+首次启动会通过浏览器完成独立 OAuth 登录。你需要可登录 Codex 的 ChatGPT 账号及模型访问权限；增强需要联网并消耗模型额度。程序不使用 Codex Desktop 内置运行时，也不复制其登录凭据。
+
+下载与版本记录见 [GitHub Releases](https://github.com/Laity-nun0/prompt-enhancer/releases)。日常操作在桌面窗口完成，不需要打开网页。源码构建与排查见下文及[启动排查](docs/troubleshooting.md)。
+
+## 使用
+
+1. 选择本地项目，并确认需要使用的 Desktop 对话。可启用多对话上下文，手动选择同项目的 1–5 条对话。
+2. 输入草稿，或在 Codex Desktop 复制草稿后按 `Ctrl+Alt+E` 唤起伴侣。快捷键冲突时尝试 `Alt+Shift+E`，以窗口显示为准。
+3. 手动选择增强模型和推理强度，再点击“增强提问”或按 `Ctrl+Enter`。
+4. 查看增强文本、使用的依据、假设和警告。完整校验成功后应用复制结果，返回 Codex Desktop 审阅、粘贴并发送。
+
+模型与可用推理强度从独立运行时动态读取。没有默认增强模型，不记忆上次选择；启动或刷新界面后需重新选择。目录当前包含 GPT-6.1 Sol，实际可用性取决于运行时和账号。未选择或不兼容的组合会被拒绝，不自动回退。
+
+选定模型时以运行时建议值初始化推理强度，可继续调整。更换模型或上下文会撤回已有增强结果。关闭窗口隐藏到托盘；通过托盘“退出”才能关闭后台。
+
+## 数据与边界
+
+- 草稿、所选对话中的用户/助手消息及按需读取的项目结构和源码，会通过独立 Codex 运行时发送给 OpenAI 模型。只有符合你及所属组织数据政策的材料才应用于增强。
+- 仅读取选中项目的相关文件及选定对话；不修改项目文件，不向 Desktop 对话写入消息。
+- 每次增强前同步所选对话。范围检查只删除未经授权的扩写；完整校验失败时保留草稿，不交付未经校验的候选。
+- 最终文本仍需用户审阅；模型的范围判断和事实理解可能出错。
+- 默认运行状态保存在 `%LOCALAPPDATA%\PromptEnhancer\state`，包括独立登录、项目映射和 Electron 缓存。Desktop 上下文副本保存在 `%LOCALAPPDATA%\PromptEnhancer\desktop-sessions`。
+- 从旧源码版本启动时，会将 `.poc/` 中的 `codex-home/`、`profile/`、`projects.json`、`electron-user-data/` 和 `electron-session-data/` 迁移到新状态目录；不迁移测试数据，也不删除旧源。清理旧目录前应确认新状态可用并保留必要备份。
+- `PROMPT_ENHANCER_STATE_DIR` 可指定非空绝对路径以隔离运行状态。删除状态目录中的 `codex-home/` 会丢失本应用的独立登录和会话状态。
+
+上下文读取会排除 `.local/`、常见凭据目录和文件，但不会自动遵守项目的全部 `.gitignore`，也不能识别任意名称的秘密。详细说明见[数据处理说明](docs/privacy.md)。
+
+## 开发与打包
+
+源码开发需要 Node.js 24 或更新版本，以及 npm：
 
 ```powershell
 git clone https://github.com/Laity-nun0/prompt-enhancer.git
 cd prompt-enhancer
 npm ci
 npm run build
-npm run prepare:desktop
 npm run desktop
 ```
 
-也可在安装、构建完成后双击 `启动Companion.cmd`。首次启动会通过浏览器完成独立 OAuth 登录，无需手动执行 Codex CLI 登录命令。
-
-`prepare:desktop` 检查平台、Node.js、构建和 Electron 二进制；首次执行可能需要下载 Electron。登录窗口支持手动打开官方登录页；登录成功会清除临时授权链接。详细排查见[安装与启动排查](docs/troubleshooting.md)。
-
-日常使用桌面入口即可。开发入口为 `npm run dev`，地址是 `http://127.0.0.1:4173`；双击 `启动开发.cmd` 会同时打开浏览器。桌面和网页入口共用端口及本地状态，不能同时运行。
-
-## 使用
-
-1. 选择本地项目，并确认需要使用的 Desktop 对话。可启用多对话上下文，手动选择同项目的 1–5 条对话。
-2. 输入草稿，或在 Codex Desktop 复制草稿后按 `Ctrl+Alt+E` 唤起伴侣。快捷键冲突时尝试 `Alt+Shift+E`，以窗口显示为准；可用提示只显示实际快捷键。
-3. 手动选择增强模型和推理强度，再点击“增强提问”或按 `Ctrl+Enter`。
-4. 查看增强文本、使用的依据、假设和警告。桌面入口在完整校验成功后复制结果，返回 Codex Desktop 审阅、粘贴并发送。
-
-模型与可用推理强度从独立运行时动态读取。没有默认增强模型，不记忆上次选择；启动或刷新页面后需重新选择。目录当前包含 GPT-6.1 Sol，实际可用性取决于运行时和账号。未选择或不兼容的组合会被拒绝，不自动回退。
-
-选定模型时以运行时建议值初始化推理强度，可继续调整。更换模型或上下文会撤回已有增强结果。关闭窗口隐藏到托盘；通过托盘“退出”才能关闭后台。源码更新后重新构建并重启。
-
-## 数据与边界
-
-- 增强不是纯本地处理：草稿、所选对话中的用户/助手消息及按需读取的项目结构和源码，会通过独立 Codex 运行时发送给 OpenAI 模型。只有符合你及所属组织数据政策的材料才应用于增强。
-- 仅读取选中项目的相关文件及选定对话；不修改项目文件，不向 Desktop 对话写入消息。
-- 每次增强前同步所选对话。范围检查只删除未经授权的扩写；完整校验失败时保留草稿，不交付未经校验的候选。
-- 最终文本仍需用户审阅；模型的范围判断和事实理解可能出错。
-- 项目目录下 `.poc/` 保存独立登录、会话映射、临时项目及报告；Desktop 上下文副本保存在 `%LOCALAPPDATA%\PromptEnhancer\desktop-sessions`。
-- `.poc/`、`.local/`、依赖、构建产物和凭据均不提交。删除 `.poc/codex-home` 会丢失本应用的独立登录和会话状态。
-
-`.poc` 是历史沿用的本地状态目录名，不等于整个目录都是测试产物：其中 `codex-home/`、`profile/` 和 `projects.json` 用于实际运行，`unit/`、截图和测试报告才是可再生成的验收材料。为保留现有登录和线程，这轮不迁移它。旧的 `启动PoC.cmd` 已改名为 `启动开发.cmd`。
-
-上下文读取会排除 `.local/`、常见凭据目录和文件，但不会自动遵守项目的全部 `.gitignore`，也不能识别任意名称的秘密。详细说明见[数据处理说明](docs/privacy.md)；首次安装问题见[启动排查](docs/troubleshooting.md)。
-
-## 开发
+`npm run dev` 会构建并启动桌面应用。`127.0.0.1:4173` 是 Electron 界面的内部服务，每个实例使用随机授权 token，仅 Electron 注入；普通本机浏览器访问返回 403。源码更新后需重新构建并重启。
 
 ```powershell
 npm test
 npm run typecheck
-npm run build
+npm run package:dir
+npm run package:win
 ```
 
-`npm test` 只执行离线单元测试，不登录、不调用模型。GitHub Actions 在 Windows 和 Node.js 24 上执行相同检查。真实模型与 Electron 验收另见[测试说明](docs/testing.md)，实际完成及未覆盖范围见[发布前验证记录](docs/validation.md)。
+`package:win` 生成免安装单文件 `release/Prompt-Enhancer-Windows-x64.exe`，它是正式发布产物。`package:dir` 仅用于调试，生成 `release/win-unpacked/Prompt Enhancer.exe`，调试版需要保留整个目录。打包可能需要下载 Electron 和构建工具。当前 EXE 未使用代码签名证书，Windows 可能显示未知发布者提示。测试材料放在 `.local/`，不随产品打包；源码仓库不提交账号状态、依赖和构建产物，EXE 通过 Releases 分发。
+
+`npm test` 只执行离线单元测试，不登录、不调用模型。真实模型与 Electron 验收见[测试说明](docs/testing.md)，已验证及未覆盖范围见[发布前验证记录](docs/validation.md)。
 
 ```text
 desktop/     Electron 宿主、托盘与剪贴板桥接
 src/         React 界面与客户端逻辑
 server/      本地 API、独立运行时及上下文增强
-scripts/     启动、维护工具、测试和合成评测用例
+scripts/     构建、维护工具、测试和合成评测用例
 docs/        架构与测试说明
+release/     本地打包产物
 ```
 
-实现和修改约束见[架构说明](docs/architecture.md)。当前提供源码运行方式，尚未提供安装包或开机自启。
+实现和修改约束见[架构说明](docs/architecture.md)。
 
 ## 许可证
 

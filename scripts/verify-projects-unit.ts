@@ -5,8 +5,8 @@ import { resolve, join } from 'node:path';
 import { ProjectContext, projectKey, projectPath } from '../server/project-context.ts';
 import { Projects } from '../server/projects.ts';
 
-mkdirSync('.poc/unit', { recursive: true });
-const root = mkdtempSync(resolve('.poc/unit/project-'));
+mkdirSync('.local/test', { recursive: true });
+const root = mkdtempSync(resolve('.local/test/project-'));
 const a = join(root, 'a'), b = join(root, 'b');
 mkdirSync(a); mkdirSync(b); mkdirSync(join(a, 'src'));
 writeFileSync(join(a, 'README.md'), '工程 A');

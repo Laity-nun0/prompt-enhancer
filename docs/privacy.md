@@ -10,15 +10,17 @@
 
 ## 本地保存内容
 
-- `.poc/codex-home/`：独立登录凭据、配置、模型缓存及运行时保存的对话和日志。它不复制 Codex Desktop 的凭据；仍属于敏感账号数据。
-- `.poc/projects.json`：本地项目路径和独立 Thread ID 映射。
-- `.poc/profile/`、`.poc/fixture/`：运行时使用的隔离用户目录及合成基底项目。
-- `.poc/login-url.txt`：首次登录期间的临时授权链接，不应分享。
-- `.poc/ui-session.json` 和验收报告：状态、模型、项目路径；报告可能包含输入及生成结果。
+下列 state/ 默认指 %LOCALAPPDATA%\PromptEnhancer\state；可用 PROMPT_ENHANCER_STATE_DIR 指定其他非空绝对路径。
+
+- `state/codex-home/`：独立登录凭据、配置、模型缓存及运行时保存的对话和日志。它不复制 Codex Desktop 的凭据；仍属于敏感账号数据。
+- `state/projects.json`：本地项目路径和独立 Thread ID 映射。
+- `state/profile/`、`state/runtime-workspace/`：运行时使用的隔离用户目录及空的运行时工作目录。
+- `state/login-url.txt`：首次登录期间的临时授权链接，不应分享。
+- `state/ui-session.json`：界面状态、模型和项目路径。`state/electron-user-data/`、`state/electron-session-data/` 保存 Electron 用户数据和缓存。`.local/` 中的验收报告可能包含输入及生成结果，不随产品打包。
 - `%LOCALAPPDATA%\PromptEnhancer\desktop-sessions`：导入的 Desktop 对话副本、标题、消息、时间、路径及可选 Hook 事件。
 - 系统剪贴板：只有桌面增强完整通过校验后，才写入最终结果。
 
-这些位置不进入 Git 提交。删除应用源码目录不一定删除外部 Desktop 注册目录；卸载本地数据前应先退出应用并判断是否需要保留对话记录。删除独立登录目录后需要重新登录，不要把凭据复制给其他使用者。
+这些位置不进入 Git 提交或发布 EXE。运行数据位于用户目录，删除源码或程序目录不代表删除本地状态；清理本地数据前应先退出应用并判断是否需要保留对话记录。旧源码 `.poc/` 的登录、用户目录、项目映射和 Electron 缓存可迁移到新状态目录；迁移不删除旧源、不复制测试数据，所以旧目录仍可能保留敏感数据。删除独立登录目录后需要重新登录，不要把凭据复制给其他使用者。
 
 ## 文件读取保护及其上限
 

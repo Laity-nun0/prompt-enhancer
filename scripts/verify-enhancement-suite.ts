@@ -6,11 +6,11 @@ import { enhanceDesktop } from '../server/desktop-optimizer.ts';
 import type { DesktopSession } from '../server/desktop-sessions.ts';
 import { enhancementCases, evaluateEnhancement } from './enhancement-cases.ts';
 
-mkdirSync('.poc/unit', { recursive: true });
+mkdirSync('.local/test', { recursive: true });
 const requested = process.argv.slice(2);
 assert(requested.every(id => enhancementCases.some(c => c.id === id)), '未知评测 ID');
 const cases = enhancementCases.filter(c => !requested.length || requested.includes(c.id));
-const reportPath = resolve('.poc/enhancement-suite-results.json');
+const reportPath = resolve('.local/enhancement-suite-results.json');
 const results: any[] = [];
 function save(status: 'running' | 'completed' | 'failed', error?: string) {
   writeFileSync(reportPath, JSON.stringify({ status, error, completed: results.length, total: cases.length,
@@ -21,7 +21,7 @@ let runtime: Awaited<ReturnType<typeof createRuntime>> | undefined;
 try {
   runtime = await createRuntime();
   for (const test of cases) {
-    const cwd = mkdtempSync(resolve(`.poc/unit/suite-${test.id}-`));
+    const cwd = mkdtempSync(resolve(`.local/test/suite-${test.id}-`));
     const files = { 'package.json': '{"name":"quality-fixture","private":true}', ...test.files };
     for (const [name, content] of Object.entries(files)) {
       mkdirSync(dirname(join(cwd, name)), { recursive: true });

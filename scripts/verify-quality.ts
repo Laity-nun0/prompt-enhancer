@@ -19,6 +19,6 @@ try {
     results.push({ draft: test.draft, passed, output });
     console.log(JSON.stringify(results.at(-1)));
   }
-  writeFileSync('.poc/quality-results.json', JSON.stringify({ passed: results.every(x => x.passed), results }, null, 2));
+  writeFileSync('.local/quality-results.json', JSON.stringify({ passed: results.every(x => x.passed), results }, null, 2));
   assert(results.every(x => x.passed), '优化器质量用例未全部通过，请检查报告');
 } finally { runtime.close(); }

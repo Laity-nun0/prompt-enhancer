@@ -1,5 +1,5 @@
 // 可重复的真实 Electron 集成检查；不会操作 Codex Desktop 窗口。
-// POC_PLAYWRIGHT_MODULE 可指定已安装的 playwright 包目录，无需新增产品依赖。
+// PROMPT_ENHANCER_PLAYWRIGHT_MODULE 可指定已安装的 playwright 包目录，无需新增产品依赖。
 import { createRequire } from 'node:module';
 import { resolve, join } from 'node:path';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -7,21 +7,22 @@ import { createHash } from 'node:crypto';
 import { strict as assert } from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
 const require = createRequire(import.meta.url);
-const { _electron: electron } = require(process.env.POC_PLAYWRIGHT_MODULE || 'playwright');
+const { _electron: electron } = require(process.env.PROMPT_ENHANCER_PLAYWRIGHT_MODULE || 'playwright');
 const root = resolve('.');
 const hostFile = join(root, 'desktop/main.cjs');
 const lifecycleOnly = process.argv.includes('--lifecycle-only');
-if (!lifecycleOnly) assert(process.env.POC_VERIFY_MODEL && process.env.POC_VERIFY_EFFORT && process.env.POC_VERIFY_PROJECT, '请显式设置 POC_VERIFY_MODEL、POC_VERIFY_EFFORT 和 POC_VERIFY_PROJECT');
+if (!lifecycleOnly) assert(process.env.PROMPT_ENHANCER_VERIFY_MODEL && process.env.PROMPT_ENHANCER_VERIFY_EFFORT && process.env.PROMPT_ENHANCER_VERIFY_PROJECT, '请显式设置 PROMPT_ENHANCER_VERIFY_MODEL、PROMPT_ENHANCER_VERIFY_EFFORT 和 PROMPT_ENHANCER_VERIFY_PROJECT');
 const report = { passed: false, checks: [], manual: '本脚本为真实窗口自动化；未模拟按键操作 Codex Desktop，未物理点击系统托盘。' };
-mkdirSync('.poc', { recursive: true });
-const env = { ...process.env, POC_NODE_EXE: process.execPath }; delete env.ELECTRON_RUN_AS_NODE;
+mkdirSync('.local', { recursive: true });
+const env = { ...process.env, PROMPT_ENHANCER_NODE_EXE: process.execPath }; delete env.ELECTRON_RUN_AS_NODE;
 const app = await electron.launch({ executablePath: require('electron'), args: [hostFile], cwd: root, env });
 let page, originalClipboard, originalProject;
-const api = async (path = '/api/state') => (await fetch('http://127.0.0.1:4173' + path)).json();
+const desktopFetch = (url, options) => page.evaluate(async ({ url, options }) => { const response = await fetch(url, options); return { status: response.status, data: await response.json() }; }, { url, options });
+const api = async (path = '/api/state') => (await desktopFetch(path)).data;
 const check = name => { report.checks.push(name); console.log(name); };
 const hash = file => createHash('sha256').update(readFileSync(file)).digest('hex');
 function snapshot(dir) {
-  return Object.fromEntries(readdirSync(dir, { withFileTypes: true }).filter(e => !e.isSymbolicLink() && !['.git', '.poc', 'node_modules', '__pycache__', 'dist'].includes(e.name)).flatMap(e => {
+  return Object.fromEntries(readdirSync(dir, { withFileTypes: true }).filter(e => !e.isSymbolicLink() && !['.git', '.poc', '.local', 'release', 'node_modules', '__pycache__', 'dist'].includes(e.name)).flatMap(e => {
     const path = join(dir, e.name); return e.isDirectory() ? Object.entries(snapshot(path)) : [[path, hash(path)]];
   }));
 }
@@ -56,7 +57,7 @@ try {
   check('真实 Electron 窗口、React 页面、Node 后端正常');
   assert(!('defaultModelSelection' in initial));
   for (const selection of [{}, { model: 'unavailable-model', effort: 'low' }, { model: initial.models[0].model, effort: 'unsupported-effort' }]) {
-    const response = await fetch('http://127.0.0.1:4173/api/enhance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: initial.threadId, draft: '请检查当前项目，仅解释。', ...selection }) });
+    const response = await desktopFetch('/api/enhance', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: initial.threadId, draft: '请检查当前项目，仅解释。', ...selection }) });
     assert.equal(response.status, 400);
   }
   check('真实 API 拒绝缺失模型、不可用模型及不兼容强度，不自动回退');
@@ -72,15 +73,15 @@ try {
   page.off('request', recordEnhance);
   assert(await page.getByRole('button', { name: '选择增强模型', exact: true }).isVisible());
   check('初始没有模型选择；增强按钮禁用，Ctrl+Enter 不提交增强请求');
-  const option = initial.models.find(item => item.model === process.env.POC_VERIFY_MODEL) || initial.models[0];
+  const option = initial.models.find(item => item.model === process.env.PROMPT_ENHANCER_VERIFY_MODEL) || initial.models[0];
   await chooseModel(option.model, option.supportedReasoningEfforts.at(-1));
   assert.equal(await page.locator('.model-reset, .model-menu-default').count(), 0);
   await page.locator('.model-button').click();
   await page.locator('.model-select-trigger').click();
   assert.equal(await page.locator('.model-menu-item').count(), initial.models.length);
-  await page.screenshot({ path: '.poc/model-picker-desktop.png', fullPage: true });
+  await page.screenshot({ path: '.local/model-picker-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: '.poc/model-picker-mobile.png', fullPage: true });
+  await page.screenshot({ path: '.local/model-picker-mobile.png', fullPage: true });
   assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await page.setViewportSize({ width: 1040, height: 760 });
   await page.reload();
@@ -93,7 +94,8 @@ try {
   for (let i = 0; i < owned.length; i++) for (const p of processes.filter(p => p.ParentProcessId === owned[i])) owned.push(p.ProcessId);
   report.ownedProcesses = processes.filter(p => owned.includes(p.ProcessId));
   assert(report.ownedProcesses.some(p => p.Name === 'codex.exe'));
-  assert.equal((await fetch('http://127.0.0.1:4173/@fs/' + root + '/server/index.ts')).status, 404);
+  assert.equal((await fetch('http://127.0.0.1:4173/')).status, 403);
+  assert.equal(await page.evaluate(async () => (await fetch('/@fs/server/index.ts')).status), 404);
   report.shortcut = await app.evaluate(({ globalShortcut }) => ['Control+Alt+E', 'Alt+Shift+E'].find(key => globalShortcut.isRegistered(key)));
   assert(report.shortcut);
   check(`Windows 全局快捷键注册成功：${report.shortcut}`);
@@ -131,8 +133,8 @@ try {
 
   if (!lifecycleOnly) {
   page.on('dialog', dialog => dialog.accept());
-  await chooseModel(process.env.POC_VERIFY_MODEL, process.env.POC_VERIFY_EFFORT);
-  await chooseProject(process.env.POC_VERIFY_PROJECT);
+  await chooseModel(process.env.PROMPT_ENHANCER_VERIFY_MODEL, process.env.PROMPT_ENHANCER_VERIFY_EFFORT);
+  await chooseProject(process.env.PROMPT_ENHANCER_VERIFY_PROJECT);
   let state = await api();
   const sessions = state.desktopSessions;
   assert(sessions.length >= 2, '验证项目需要至少两个 Desktop 对话');
@@ -165,7 +167,7 @@ try {
   assert(result.contextInspection.filesRead.length > 0);
   check('Ctrl+Enter 真实 Enhance 成功；最终已校验文本与 textarea、系统剪贴板完全相同');
   report.enhance = { sessionId: selectedId, turns: result.isolation.beforeTurns, filesRead: result.contextInspection.filesRead, scopeValidation: result.scopeValidation };
-  await page.screenshot({ path: '.poc/companion-window.png', fullPage: true });
+  await page.screenshot({ path: '.local/companion-window.png', fullPage: true });
   await page.locator('#desktop-session').selectOption(sessions[1].sessionId);
   assert.equal(await page.locator('#draft').inputValue(), draft);
   await page.locator('#desktop-session').selectOption(selectedId);
@@ -194,13 +196,13 @@ try {
   if (page) {
     report.uiAlerts = await page.locator('[role="alert"]').allTextContents().catch(() => []);
     report.draft = await page.locator('#draft').inputValue().catch(() => '');
-    await page.screenshot({ path: '.poc/companion-failure.png', fullPage: true }).catch(() => {});
+    await page.screenshot({ path: '.local/companion-failure.png', fullPage: true }).catch(() => {});
     console.log(JSON.stringify({ alerts: report.uiAlerts, draft: report.draft }));
   }
   throw error;
 }
 finally {
-  writeFileSync(lifecycleOnly ? '.poc/companion-lifecycle-results.json' : '.poc/companion-electron-results.json', JSON.stringify(report, null, 2));
+  writeFileSync(lifecycleOnly ? '.local/companion-lifecycle-results.json' : '.local/companion-electron-results.json', JSON.stringify(report, null, 2));
   if (!report.passed) {
     if (originalClipboard !== undefined) await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), originalClipboard).catch(() => {});
     await host((_, { hostFile }) => { void process.getBuiltinModule('module').createRequire(hostFile)(hostFile).quit(); }).catch(() => {});

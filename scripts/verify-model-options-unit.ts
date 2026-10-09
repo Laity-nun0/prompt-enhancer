@@ -32,8 +32,8 @@ test('没有运行时默认模型也可读取目录，新模型与新增强度�
 });
 
 test('所选模型和强度贯穿 READY、fork、上下文、优化与范围检查', async () => {
-  mkdirSync('.poc/unit', { recursive: true });
-  const cwd = mkdtempSync(resolve('.poc/unit/model-option-'));
+  mkdirSync('.local/test', { recursive: true });
+  const cwd = mkdtempSync(resolve('.local/test/model-option-'));
   writeFileSync(join(cwd, 'package.json'), '{}');
   const selection = { model: 'model-b', effort: 'high' };
   const calls: { method: string; params: any }[] = [];

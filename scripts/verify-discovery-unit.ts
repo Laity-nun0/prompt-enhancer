@@ -4,9 +4,9 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { DesktopSessions } from '../server/desktop-sessions.ts';
 import { discoverDesktopSessions } from '../server/desktop-discovery.ts';
-mkdirSync('.poc/unit', { recursive: true });
+mkdirSync('.local/test', { recursive: true });
 test('按 cwd 自动导入多个 Desktop 会话，忽略其他项目正文、CLI 和子代理', () => {
-  const root = mkdtempSync(resolve('.poc/unit/discovery-'));
+  const root = mkdtempSync(resolve('.local/test/discovery-'));
   const a=join(root,'a'), b=join(root,'b'), transcripts=join(root,'sessions');
   for (const p of [a,b,transcripts]) mkdirSync(p);
   function create(id:string,cwd:string,originator='Codex Desktop',source:unknown='vscode',body?:string) {
@@ -29,7 +29,7 @@ test('按 cwd 自动导入多个 Desktop 会话，忽略其他项目正文、CLI
   create('A3',a); registry.discover(a,transcripts); assert.equal(registry.list(a).length,3);
 });
 test('会话目录缺失或单个元数据损坏时提示，不阻断其余发现', () => {
-  const root=mkdtempSync(resolve('.poc/unit/discovery-'));
+  const root=mkdtempSync(resolve('.local/test/discovery-'));
   assert(discoverDesktopSessions(root,join(root,'missing')).warnings.length);
   writeFileSync(join(root,'rollout-broken.jsonl'),'BROKEN\n');
   const result=discoverDesktopSessions(root,root);

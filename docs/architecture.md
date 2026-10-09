@@ -2,13 +2,13 @@
 
 ## 运行链
 
-`启动Companion.cmd` → `scripts/start-desktop.vbs` → `scripts/start-desktop.cjs` → `desktop/main.cjs` → `server/index.ts` → 独立 Codex App Server。
+免安装单文件 `Prompt-Enhancer-Windows-x64.exe` 自动展开资源 → 内部 `Prompt Enhancer.exe` → `desktop/main.cjs` → Electron 自带 Node 启动的后端 → 随包独立 Codex App Server。源码开发通过 `npm run desktop` 启动。
 
-Electron 读取 `dist/`，网页开发入口使用 Vite。两者共用 `127.0.0.1:4173`，服务先独占端口再初始化运行时，防止两个入口并发写入状态。
+Electron 读取构建后的 `dist/`，`127.0.0.1:4173` 仅服务桌面界面。服务先独占端口再初始化运行时，防止并发写入状态；每个实例使用随机授权 token，仅 Electron 注入；普通本机浏览器访问返回 403。`npm run dev` 构建后启动桌面。
 
-`server/app-server.ts` 使用项目内固定版本 CLI，单独设置配置、用户目录及认证存储。优化运行时禁用 Hook、插件、应用、多智能体、shell 等能力。升级 CLI 时须核对所用 JSON-RPC schema，并运行模型目录及真实增强验收。
+`server/app-server.ts` 使用随包固定版本独立 Codex 可执行文件（源码开发使用项目依赖），单独设置配置、用户目录及认证存储。优化运行时禁用 Hook、插件、应用、多智能体、shell 等能力。升级 CLI 时须核对所用 JSON-RPC schema，并运行模型目录及真实增强验收。
 
-启动器先核对 Node.js 24+、Windows x64、构建及 Electron 二进制。首次 OAuth 等待期间，宿主显示受限的官方登录入口；登录 URL 不输出到日志和报告，临时链接在登录完成或失败时清除。错误说明区分端口、运行时与登录；不会为解决冲突杀掉其他应用。
+源码启动器先核对 Node.js 24+、Windows x64、构建及 Electron 二进制；免安装版使用 Electron 自带 Node，无需外部 Node.js。首次 OAuth 等待期间，宿主显示受限的官方登录入口；登录 URL 不输出到日志和报告，临时链接在登录完成或失败时清除。错误说明区分端口、运行时与登录；不会为解决冲突杀掉其他应用。
 
 ## 三类对话
 
@@ -44,18 +44,24 @@ Desktop 增强先创建只含固定 READY 消息的独立基底，再产生临�
 
 ## 本地状态
 
+表中的 `state` 指默认状态目录 `%LOCALAPPDATA%\PromptEnhancer\state`。
+
 | 位置 | 内容 | 是否提交 |
 | --- | --- | --- |
-| `.poc/codex-home/` | 独立配置、登录和线程历史 | 否 |
-| `.poc/projects.json` | 项目路径及独立 Thread ID 映射 | 否 |
-| `.poc/profile/`、`.poc/fixture/` | 隔离用户目录和合成项目 | 否 |
-| `.poc/unit/` 及报告 | 测试临时材料 | 否 |
+| `%LOCALAPPDATA%\PromptEnhancer\state\codex-home/` | 独立配置、登录和线程历史 | 否 |
+| `state\projects.json` | 项目路径及独立 Thread ID 映射 | 否 |
+| `state\profile/`、`state\runtime-workspace/` | 隔离用户目录和空的运行时工作目录 | 否 |
+| `state\electron-user-data/`、`state\electron-session-data/` | Electron 用户数据与会话缓存 | 否 |
 | `%LOCALAPPDATA%\PromptEnhancer\desktop-sessions` | Desktop 上下文注册与副本 | 否 |
-| `.local/` | 本机归档及维护工具 | 否 |
+| `.local/` | 测试临时材料、报告、本机归档及维护工具 | 否 |
 
 项目切换按规范化路径保存映射。恢复时先 `thread/resume`，不覆盖原 cwd，再核对归属；临时服务或网络故障不能覆盖旧 Thread ID。只有确定旧线程不可恢复时才新建并提示。
 
-`.poc` 是兼容旧版本的实际状态路径，不是可整体删除的测试缓存。验收时可用绝对路径环境变量 `PROMPT_ENHANCER_STATE_DIR` 指定独立状态目录；独立 runtime、项目映射、登录链接、UI 状态及该实例的 Electron 缓存都跟随该目录。该选项不会迁移、复制或删除默认登录状态，生产使用通常不需要设置。首次验收用 `PROMPT_ENHANCER_TEST_PROFILE_DIR` 仅隔离 Node 后端的用户目录，保留 Electron 的 Windows 系统用户环境。
+默认状态目录为 `%LOCALAPPDATA%\PromptEnhancer\state`。`PROMPT_ENHANCER_STATE_DIR` 可指定非空绝对路径；独立 runtime、项目映射、登录链接、UI 状态及该实例的 Electron 缓存都跟随该目录。使用自定义目录时，应核对其是否包含既有状态，不把隔离目录当作默认登录的副本。
+
+旧源码状态迁移仅复制 `.poc/` 内的 `codex-home/`、`profile/`、`projects.json`、`electron-user-data/` 和 `electron-session-data/` 到新目录，不复制测试材料、不删除旧源。迁移不会覆盖目标已有状态；暂存副本会重定位 SQLite 会话索引，成功后原子启用。旧程序仍运行时拒绝迁移，迁移后的登录和线程恢复需验证。首次验收用 `PROMPT_ENHANCER_TEST_PROFILE_DIR` 仅隔离 Node 后端的用户目录，保留 Electron 的 Windows 系统用户环境。
+
+打包由 electron-builder 的 portable 目标生成 Windows x64 免安装单文件 EXE，解包目录仅用于调试，包含 Electron、后端代码和独立 Codex 可执行文件。`.local/`、旧 `.poc/` 状态、测试脚本和真实凭据不随产品打包。
 
 自动发现只解析目标项目的 Desktop 会话正文，忽略 CLI、子智能体和其他项目正文。Hook 是可选采集方式，不是正常使用的前置条件；安装脚本会修改用户级 Hook 配置，不能作为普通启动或测试步骤执行。
 

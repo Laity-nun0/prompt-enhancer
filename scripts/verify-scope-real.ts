@@ -22,5 +22,5 @@ try {
       } finally { await runtime.rpc('thread/unsubscribe',{threadId:fork.thread.id}); }
     }
   } finally { await runtime.rpc('thread/archive',{threadId:base.thread.id}); }
-  writeFileSync('.poc/scope-results.json',JSON.stringify({passed:true,results},null,2));
+  writeFileSync('.local/scope-results.json',JSON.stringify({passed:true,results},null,2));
 } finally {runtime.close();}

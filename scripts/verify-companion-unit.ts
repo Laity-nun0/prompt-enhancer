@@ -28,8 +28,8 @@ test('只能兑换后端结果凭证，不接受 renderer 任意文本、旧凭�
 
 for (const failure of ['none', 'optimizer', 'validator', 'transcript', 'source', 'citation', 'history', 'archive']) {
   test(`只有全部校验完成才交付可复制结果：${failure}`, async () => {
-    mkdirSync('.poc/unit', { recursive: true });
-    const root = mkdtempSync(resolve('.poc/unit/companion-'));
+    mkdirSync('.local/test', { recursive: true });
+    const root = mkdtempSync(resolve('.local/test/companion-'));
     const file = join(root, 'package.json'); writeFileSync(file, '{}');
     const transcript = join(root, 'history.jsonl'); writeFileSync(transcript, '测试只读原文');
     const sourceBytes = readFileSync(file), transcriptBytes = readFileSync(transcript);

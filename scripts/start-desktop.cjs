@@ -8,7 +8,7 @@ if (process.platform !== 'win32' || process.arch !== 'x64') fail('当前版本�
 try { stateDirectory(join(__dirname, '..')); } catch (error) { fail(error.message); }
 if (!existsSync(join(__dirname, '../dist/index.html'))) fail('缺少前端构建产物，请先执行 npm run build。');
 /** @type {NodeJS.ProcessEnv} */
-const env = { ...process.env, POC_NODE_EXE: process.execPath };
+const env = { ...process.env, PROMPT_ENHANCER_NODE_EXE: process.execPath };
 delete env.ELECTRON_RUN_AS_NODE;
 // electron npm 包在普通 Node 中返回可执行文件路径，在 Electron 内返回 API。
 let executable;

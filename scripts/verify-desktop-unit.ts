@@ -6,8 +6,8 @@ import { spawnSync } from 'node:child_process';
 import { DesktopSessions } from '../server/desktop-sessions.ts';
 import { parseTranscript } from '../server/transcript.ts';
 import { enhanceDesktop } from '../server/desktop-optimizer.ts';
-const cwd = process.cwd(); mkdirSync('.poc/unit', { recursive: true });
-const dir = () => mkdtempSync(resolve('.poc/unit/desktop-'));
+const cwd = process.cwd(); mkdirSync('.local/test', { recursive: true });
+const dir = () => mkdtempSync(resolve('.local/test/desktop-'));
 test('Hook 被动输出、错误不阻断、仅写指定数据目录', () => {
   const root = dir();
   for (const input of ['invalid', JSON.stringify({ hook_event_name: 'Stop', session_id: 'A', cwd, turn_id: 't', last_assistant_message: 'done' })]) {

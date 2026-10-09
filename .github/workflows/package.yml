@@ -1,0 +1,23 @@
+name: Windows application
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Prompt-Enhancer-Windows-x64
+          path: release/Prompt-Enhancer-Windows-x64.exe
+          if-no-files-found: error

@@ -17,11 +17,11 @@ CI 使用 Windows runner 和 Node.js 24，构建后执行 `prepare:desktop` 验�
 
 ## 真实模型
 
-使用项目独立登录，会消耗模型额度并生成 `.poc/` 报告。运行前先退出 Companion 或网页服务；同一时刻只运行一个使用独立运行时的验收脚本。
+使用独立登录，会消耗模型额度并在 `.local/` 生成测试材料。运行前先退出 Prompt Enhancer；同一时刻只运行一个使用独立运行时的验收脚本。
 
 ```powershell
-$env:POC_VERIFY_MODEL = 'gpt-6.1-sol'
-$env:POC_VERIFY_EFFORT = 'low'
+$env:PROMPT_ENHANCER_VERIFY_MODEL = 'gpt-6.1-sol'
+$env:PROMPT_ENHANCER_VERIFY_EFFORT = 'low'
 npm run verify:model
 ```
 
@@ -42,13 +42,13 @@ npm run verify:model
 
 ## Electron 验收
 
-使用已安装的 Playwright。它是验收工具，不是产品依赖；可通过 `POC_PLAYWRIGHT_MODULE` 指向本机包目录。
+使用已安装的 Playwright。它是验收工具，不是产品依赖；可通过 `PROMPT_ENHANCER_PLAYWRIGHT_MODULE` 指向本机包目录。
 
 启动应用、完成独立登录并选择项目后退出，再运行：
 
 ```powershell
-$env:POC_PLAYWRIGHT_MODULE = 'C:\tools\node_modules\playwright'
-$env:POC_VERIFY_MODEL = 'gpt-6.1-sol'
+$env:PROMPT_ENHANCER_PLAYWRIGHT_MODULE = 'C:\tools\node_modules\playwright'
+$env:PROMPT_ENHANCER_VERIFY_MODEL = 'gpt-6.1-sol'
 node scripts/verify-companion-electron.mjs --lifecycle-only
 ```
 
@@ -57,28 +57,28 @@ node scripts/verify-companion-electron.mjs --lifecycle-only
 完整验收还需显式指定一个至少有两条 Desktop 对话的项目：
 
 ```powershell
-$env:POC_VERIFY_PROJECT = 'C:\projects\example'
-$env:POC_VERIFY_EFFORT = 'low'
+$env:PROMPT_ENHANCER_VERIFY_PROJECT = 'C:\projects\example'
+$env:PROMPT_ENHANCER_VERIFY_EFFORT = 'low'
 node scripts/verify-companion-electron.mjs
 ```
 
-完整检查会调用一次真实增强，并核对草稿、剪贴板、transcript、已读项目和独立主线程。失败时查看 `.poc/companion-electron-results.json`。自动化不代替物理托盘点击、双击入口或人工审阅。
+完整检查会调用一次真实增强，并核对草稿、剪贴板、transcript、已读项目和独立主线程。失败时查看 `.local/companion-electron-results.json`。自动化不代替物理托盘点击、双击 EXE 或人工审阅。
 
 ## 从零登录验收
 
 使用干净的源码副本执行 `npm ci`、`npm run build` 和 `npm run prepare:desktop`，然后设置已安装 Playwright 的包路径及当前可用模型：
 
 ```powershell
-$env:POC_PLAYWRIGHT_MODULE = 'C:\tools\node_modules\playwright'
-$env:POC_VERIFY_MODEL = 'gpt-6.1-sol'
-$env:POC_VERIFY_EFFORT = 'low'
+$env:PROMPT_ENHANCER_PLAYWRIGHT_MODULE = 'C:\tools\node_modules\playwright'
+$env:PROMPT_ENHANCER_VERIFY_MODEL = 'gpt-6.1-sol'
+$env:PROMPT_ENHANCER_VERIFY_EFFORT = 'low'
 npm run verify:first-run
 npm run verify:first-run -- --run
 ```
 
 不带 `--run` 只进行准备检查；带参数后启动真实 Electron 窗口、打开浏览器，必须由操作者完成新的 OAuth 授权，并消耗一次增强的模型额度。脚本创建 `.local/first-run/run-*` 状态目录，隔离应用状态、Electron 缓存、Node 后端用户目录及 Desktop 注册，不复制原凭据或读取原 Desktop 历史。Electron 保留 Windows 原生系统用户环境，以免直接覆盖 USERPROFILE 破坏图形进程初始化；Node 后端通过仅供验收的 `PROMPT_ENHANCER_TEST_PROFILE_DIR` 使用合成目录。合成 transcript 仅用于验证导入与增强流程，不冒充用户真实对话。
 
-验收核对新登录、空的初始状态、UI 项目与模型选择、合成上下文、增强及剪贴板，并在结束后关闭本次应用。仅在即将增强前保存纯文本剪贴板；遇到图片、文件或富文本会停止增强，要求先自行保存。结束时只有剪贴板仍为本轮生成文本才恢复快照，未生成结果或用户后来复制的内容不覆盖。报告只记录检查项和状态路径，不含 OAuth URL、账号、对话正文或生成内容。真实登录不会放入 CI。每轮验收会产生独立登录数据；结束后可删除该轮目录，不能清理默认 `.poc/codex-home`。
+验收核对新登录、空的初始状态、UI 项目与模型选择、合成上下文、增强及剪贴板，并在结束后关闭本次应用。仅在即将增强前保存纯文本剪贴板；遇到图片、文件或富文本会停止增强，要求先自行保存。结束时只有剪贴板仍为本轮生成文本才恢复快照，未生成结果或用户后来复制的内容不覆盖。报告只记录检查项和状态路径，不含 OAuth URL、账号、对话正文或生成内容。真实登录不会放入 CI。每轮验收会产生独立登录数据；结束后可删除该轮目录，不能清理默认 `%LOCALAPPDATA%\PromptEnhancer\state\codex-home`。
 
 在同一台机器上使用全新应用状态的结果，不能替代另一台机器或一个新的 Windows 系统账号的实测。发布说明应标明实际验证环境，不宣称跨平台或所有网络环境都验证通过。
 
@@ -91,6 +91,28 @@ npm run verify:first-run -- --run
 
 ## 清理与发布
 
-应用退出后，`.poc/unit/`、schema 探针、截图和测试报告可以删除并重新生成。不要清空 `.poc/codex-home/`、`projects.json` 或 Desktop 注册目录来让测试通过。
+应用退出后，`.local/` 下的单元测试临时目录、schema 探针、截图和测试报告可以删除并重新生成。不要清空默认状态目录中的 `codex-home/`、`projects.json` 或 Desktop 注册目录来让测试通过。旧 `.poc/` 可能保留尚未清理的真实登录数据，不能整体作为测试缓存删除。
 
-上传前运行 `git status --short` 和 `git ls-files`，确认没有 `.poc/`、`.local/`、`node_modules/`、`dist/`、授权链接、凭据、真实会话或 SQLite 数据库。生产构建从源码生成，不提交 `dist/`。
+上传前运行 `git status --short` 和 `git ls-files`，确认没有 `.poc/`、`.local/`、`node_modules/`、`dist/`、`release/`、授权链接、凭据、真实会话或 SQLite 数据库。生产构建从源码生成，不提交 `dist/`。
+
+## Windows 打包验收
+
+```powershell
+npm run package:dir
+npm run package:win
+```
+
+核对正式免安装产物 `release/Prompt-Enhancer-Windows-x64.exe` 确实生成；`release/win-unpacked/Prompt Enhancer.exe` 仅用于调试。产品只携带运行所需代码与独立 Codex 可执行文件，`.local/` 测试材料、旧 `.poc/` 状态和凭据不入包。
+
+免安装版还需验证无需外部 Node.js 的启动、托盘与单实例、OAuth、状态目录、旧源码状态迁移和真实增强。迁移测试使用合成状态，检查 `codex-home/`、`profile/`、`projects.json`、`electron-user-data/`、`electron-session-data/`，确认旧源保留、目标已有状态不被覆盖、测试数据未复制。不能用源码 Electron 验收结果替代免安装 EXE 验收，也不能将打包命令成功视为真实增强通过。
+
+## 打包 EXE 启动验收
+
+构建后可执行以下检查；需先登录本应用的正式状态。此脚本不调用模型、不写剪贴板，不操作 Codex Desktop。
+
+```powershell
+$env:PROMPT_ENHANCER_PLAYWRIGHT_MODULE = 'C:\tools\node_modules\playwright'
+node scripts/verify-packaged-electron.mjs --portable
+```
+
+该检查使用打包后的 EXE，并从 PATH 移除外部 Node，核验状态目录、内置后端、模型目录、托盘、快捷键和包内容。报告放在 .local/package-smoke-results.json。加上 `--portable` 会直接启动正式单文件 EXE，检查自动展开的资源和启动链。它不等同于首次 OAuth 或真实增强验收。
