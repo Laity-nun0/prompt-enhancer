@@ -1,6 +1,7 @@
 export type Companion = {
   onDraft: (callback: (text: string) => void) => () => void;
   ready: () => Promise<{ text?: string; shortcutWarning: string; shortcut: string }>;
+  chooseProjectFolder: () => Promise<string | null>;
   copyResult: (token: string) => Promise<void>;
 };
 declare global { interface Window { companion?: Companion } }

@@ -73,6 +73,7 @@ export function App() {
   }, [modelOpen, modelListOpen]);
   const [choosing, setChoosing] = useState(false);
   const [projectInput, setProjectInput] = useState('');
+  const [pickingFolder, setPickingFolder] = useState(false);
   const [busy, setBusy] = useState<'init' | 'enhance' | 'send' | 'project' | 'sync' | null>('init');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -110,8 +111,17 @@ export function App() {
     fetch('/api/state').then(async response => { if (!response.ok) throw new Error('无法读取对话'); const data = await response.json(); loadSessions(data); setModels(data.models || []); setTurns(data.turns); setProject(data.project); setThreadId(data.threadId); setNotice(data.warning || (data.restored ? '已恢复此项目的原有对话。' : '')); })
       .catch(e => setError(String(e))).finally(() => setBusy(null));
   }, []);
+  async function browseProjectFolder() {
+    if (busy || pickingFolder || !window.companion) return;
+    setPickingFolder(true); setError('');
+    try {
+      const path = await window.companion.chooseProjectFolder();
+      if (path !== null) setProjectInput(path);
+    } catch { setError('无法打开文件夹选择器，请重试或手动输入路径。'); }
+    finally { setPickingFolder(false); }
+  }
   async function selectProject() {
-    if (busy || !projectInput.trim()) return;
+    if (busy || pickingFolder || !projectInput.trim()) return;
     if (draft && !window.confirm('切换项目后将清空当前草稿，是否继续？')) return;
     setBusy('project'); setError('');
     try {
@@ -184,9 +194,9 @@ export function App() {
       </section>
     </div>
     {choosing && <form className="project-form" onSubmit={e => { e.preventDefault(); void selectProject(); }}>
-      <label htmlFor="project-path">本地项目目录（绝对路径）</label>
-      <input autoFocus id="project-path" value={projectInput} onChange={e => setProjectInput(e.target.value)} disabled={!!busy} placeholder="D:\项目目录" />
-      <div className="actions"><button type="submit" disabled={!!busy || !projectInput.trim()}>打开项目</button><button type="button" disabled={!!busy} onClick={() => setChoosing(false)}>取消</button></div>
+      <label htmlFor="project-path">本地项目目录（可选择文件夹或手动输入）</label>
+      <input autoFocus id="project-path" value={projectInput} onChange={e => setProjectInput(e.target.value)} disabled={!!busy || pickingFolder} placeholder="D:\项目目录" />
+      <div className="actions">{window.companion && <button type="button" disabled={!!busy || pickingFolder} onClick={() => void browseProjectFolder()}><Folder size={16} aria-hidden="true" />{pickingFolder ? '正在选择…' : '选择文件夹'}</button>}<button type="submit" disabled={!!busy || pickingFolder || !projectInput.trim()}>打开项目</button><button type="button" disabled={!!busy || pickingFolder} onClick={() => setChoosing(false)}>取消</button></div>
     </form>}
     <section className="composer" aria-label="提问编辑器">
       {clipboardDraft !== null && <div role="alert" className="clipboard-conflict">

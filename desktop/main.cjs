@@ -112,6 +112,11 @@ else {
       const text = pendingClipboard; pendingClipboard = undefined;
       return { text, shortcutWarning, shortcut: shortcutLabel };
     });
+    ipcMain.handle('companion:choose-project-folder', async event => {
+      trusted(event);
+      const selection = await dialog.showOpenDialog(window, { title: '选择本地项目文件夹', buttonLabel: '选择此文件夹', properties: ['openDirectory'] });
+      return selection.canceled ? null : selection.filePaths[0] || null;
+    });
     ipcMain.handle('companion:copy-result', async (event, token) => {
       trusted(event);
       const prompt = results.take(token);

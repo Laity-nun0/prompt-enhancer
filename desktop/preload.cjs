@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('companion', {
     ipcRenderer.on('companion:draft', listener);
     return () => ipcRenderer.removeListener('companion:draft', listener);
   },
+  chooseProjectFolder: () => ipcRenderer.invoke('companion:choose-project-folder'),
   ready: () => ipcRenderer.invoke('companion:ready'),
   copyResult: token => ipcRenderer.invoke('companion:copy-result', token),
 });

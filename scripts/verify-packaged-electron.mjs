@@ -99,6 +99,34 @@ try {
   const state = await page.evaluate(async () => (await fetch('/api/state')).json());
   assert(Array.isArray(state.models) && state.models.length > 0);
   check('内置Codex CLI启动并读取模型目录');
+  await page.getByRole('button', { name: '选择项目', exact: true }).click();
+  const input = page.locator('#project-path');
+  await input.fill('D:\\原有路径');
+  await application.evaluate(({ dialog }, selected) => {
+    globalThis.__testFolderDialog = dialog.showOpenDialog;
+    dialog.showOpenDialog = async (_owner, options) => {
+      if (JSON.stringify(options.properties) !== '["openDirectory"]') throw new Error('需要文件夹选择器');
+      return { canceled: false, filePaths: [selected] };
+    };
+  }, resolve('.'));
+  try {
+    await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+    await page.waitForFunction(path => document.querySelector('#project-path').value === path, resolve('.'));
+    assert.equal(await input.inputValue(), resolve('.'));
+    await page.screenshot({ path: '.local/folder-picker-window.png' });
+    await application.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] }); });
+    await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('选择文件夹') && !button.disabled));
+    assert.equal(await input.inputValue(), resolve('.'));
+    await application.evaluate(({ dialog }) => { dialog.showOpenDialog = async () => { throw new Error('synthetic dialog error'); }; });
+    await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+    await page.getByText('无法打开文件夹选择器，请重试或手动输入路径。', { exact: true }).waitFor();
+    assert.equal(await input.inputValue(), resolve('.'));
+    check('桌面桥接与路径回填正常，模拟选择/取消/失败不会丢失原路径');
+  } finally {
+    await application.evaluate(({ dialog }) => { dialog.showOpenDialog = globalThis.__testFolderDialog; delete globalThis.__testFolderDialog; });
+    await page.getByRole('button', { name: '取消', exact: true }).click();
+  }
   assert.equal((await fetch('http://127.0.0.1:4173/')).status, 403);
   assert.equal(await page.evaluate(async () => (await fetch('/@fs/server/index.ts')).status), 404);
   check('普通浏览器403，桌面内部不公开开发文件接口');

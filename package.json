@@ -1,6 +1,6 @@
 {
   "name": "prompt-enhancer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Windows desktop companion for context-aware Codex prompt enhancement",
   "license": "MIT",
   "private": true,

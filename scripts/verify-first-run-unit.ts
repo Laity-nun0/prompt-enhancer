@@ -150,6 +150,7 @@ for (const scenario of [
   { name: '均被占用', results: [false, false], label: '快捷键不可用', warning: '快捷键暂不可用，请从托盘打开，或关闭占用程序后重启 Companion。' }
 ]) test(`简化快捷键：${scenario.name}，桥接和托盘展示一致`, async () => {
   let window: any, tooltip = '';
+  let folderSelection = { canceled: false, filePaths: ['D:\\测试项目 中文'] };
   const registrations: string[] = [], sent: unknown[][] = [];
   const callbacks = new Map<string, () => Promise<void>>(), handlers = new Map<string, (event: any) => any>();
   const backend: any = new EventEmitter(); backend.stdout = new EventEmitter(); backend.stderr = new EventEmitter();
@@ -173,7 +174,7 @@ for (const scenario of [
     Menu: { setApplicationMenu() {}, buildFromTemplate: () => ({}) }, nativeImage: { createFromPath() {} },
     globalShortcut: { register(key: string, callback: () => Promise<void>) { registrations.push(key); const registered = scenario.results[registrations.length - 1]; if (registered) callbacks.set(key, callback); return registered; } },
     clipboard: { readText: () => 'synthetic draft' }, ipcMain: { handle(name: string, callback: (event: any) => any) { handlers.set(name, callback); } },
-    dialog: { showErrorBox: () => assert.fail('快捷键冲突不能阻止应用启动') }, shell: {},
+    dialog: { showOpenDialog: async (owner: any, options: any) => { assert.equal(owner, window); assert.equal(JSON.stringify(options.properties), '["openDirectory"]'); return folderSelection; }, showErrorBox: () => assert.fail('快捷键冲突不能阻止应用启动') }, shell: {},
   };
   const host = resolve('desktop/main.cjs'), require = createRequire(import.meta.url);
   runInNewContext(readFileSync(host, 'utf8'), { require: (name: string) => name === 'electron' ? electron : name === 'node:child_process' ? { spawn: () => backend } : name.startsWith('.') ? createRequire(host)(name) : require(name), __dirname: dirname(host), module: { exports: {} }, process: { env: { PROMPT_ENHANCER_NODE_EXE: process.execPath }, stdout: { write() {} }, stderr: { write() {} } }, setTimeout, clearTimeout });
@@ -183,6 +184,13 @@ for (const scenario of [
   const state = handlers.get('companion:ready')!({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
   assert.equal(state.shortcut, scenario.label); assert.equal(state.shortcutWarning, scenario.warning);
   assert.equal(tooltip, `Prompt Enhancer · ${scenario.label}`);
+  const chooseFolder = handlers.get('companion:choose-project-folder')!;
+  const event = { sender: window.webContents, senderFrame: window.webContents.mainFrame };
+  assert.equal(await chooseFolder(event), 'D:\\测试项目 中文');
+  folderSelection = { canceled: true, filePaths: [] };
+  assert.equal(await chooseFolder(event), null);
+  await assert.rejects(() => chooseFolder({ ...event, sender: {} }), /拒绝/);
+  await assert.rejects(() => chooseFolder({ ...event, senderFrame: { url: 'http://127.0.0.1:4173/' } }), /拒绝/);
   assert(!state.shortcutWarning.includes('Ctrl+Shift+E 不可用'));
   for (const callback of callbacks.values()) await callback();
   assert.equal(sent.length, callbacks.size);
